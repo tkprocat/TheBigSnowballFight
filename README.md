@@ -3,7 +3,7 @@
 A browser-based 3D snowball fight for 2 to 16 players, in two modes the host picks in the lobby. Head hits score 2 points, body hits 1, and the first to 10 wins.
 
 - **Turn-based:** one player at a time. Hit someone and they hop to a new spot. First walk up to 5 m (duck behind a wall, a tree or another player to hide from whoever throws next), then pick a direction and an angle, time the power meter and release. The snowball flies on a ballistic arc pushed by the wind. Head hits get a slow-motion critical-hit camera. Instead of throwing, you can spend your turn packing a heavy snowball: your next hit counts triple. You can hold one at a time, it flies a bit shorter, the wind moves it less, and you drop it if someone hits you first.
-- **Realtime:** everyone at once, on a map four times the size, built for up to 16 players: a fort in the middle with corner towers and a gate on each side, three smaller outposts around it, loose walls and corners, trees and snowmen to hide behind. Run around, pick snowballs up off the snow (walk over one with a gold ring; you can carry 3 and start with none), and throw whenever you like. Picked-up snowballs come back somewhere else after 3 seconds. Hold Shift to sprint, 60% faster, but while you sprint you can't aim or throw. Getting hit doesn't move you: you stay where you are, protected for a moment (you flicker while it lasts). No power meter (every throw goes at the same speed, so you only aim), no wind and no heavy snowballs.
+- **Realtime:** everyone at once, on a map four times the size, built for up to 16 players: a fort in the middle with corner towers and a gate on each side, three smaller outposts around it, loose walls and corners, trees and snowmen to hide behind. Run around, pick snowballs up off the snow (walk over one with a gold ring; you can carry 3 and start with none), and throw whenever you like. Picked-up snowballs come back somewhere else after 2 seconds. Hold Shift to sprint, 60% faster, but while you sprint you can't aim or throw. Getting hit doesn't move you: you stay where you are, protected for a moment (you flicker while it lasts). No power meter (every throw goes at the same speed, so you only aim), no wind and no heavy snowballs.
 
 Quick chat (fixed lines and emotes: wave, dance, cheer) works in the lobby and in the game.
 
@@ -69,7 +69,7 @@ In turn-based, each turn has a 30 second limit; if time runs out, the game throw
 | Pick up a snowball | Walk over it | Walk over it |
 | Quick chat | C | 💬 |
 
-Every realtime throw goes at the same speed, so there is no power meter: the angle alone sets how far it goes (about 30 m at most). The dotted arc and the ring on the snow show where your throw would land.
+Every realtime throw goes at the same speed, so there is no power meter: the angle alone sets how far it goes (about 38 m at most). The dotted arc and the ring on the snow show where your throw would land.
 
 ## How it works
 
