@@ -7,8 +7,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  TAU, DT, PITCH_MIN, PITCH_MAX, WIN_SCORE, TURN_LIMIT, MAX_PLAYERS, COLORS, BOT_NAMES,
-  clamp, makeMap, simulate, windFor, spawnPoint, planThrow, throwShowMs,
+  TAU, DT, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, HEAVY_MULT, PACK_MS, CHAT_LINES, EMOTES, TURN_LIMIT, MAX_PLAYERS, COLORS, BOT_NAMES,
+  clamp, makeMap, simulate, windFor, spawnPoint, planThrow, throwShowMs, clampMove, standOk, chooseCover,
 } from './public/physics.js';
 
 const PORT = process.env.PORT || 3000;
@@ -44,13 +44,14 @@ function pickColor(room, wanted) {
 function newRoom(code) {
   return {
     code, players: [], host: null, started: false, over: null, seed: 1, round: 0,
-    cur: 0, turn: 0, throwN: 0, lastThrow: null, busyUntil: 0, turnEnds: null,
+    cur: 0, turn: 0, phase: 'move', throwN: 0, packN: 0, lastPack: null, lastThrow: null, busyUntil: 0, turnEnds: null,
     clock: null, botTimer: null, lastActive: Date.now(),
   };
 }
 
 const humans = (room) => room.players.filter((p) => !p.cpu);
 const curPlayer = (room) => room.players[room.cur] || null;
+const nextPlayer = (room) => room.players.length > 1 ? room.players[(room.cur + 1) % room.players.length] : null;
 
 function place(room, p) {
   const sp = spawnPoint(rand, room.map, room.players.filter((o) => o !== p && o.placed));
@@ -70,12 +71,15 @@ export function viewFor(room, member) {
     round: room.round,
     turn: room.turn,
     cur: room.started && curPlayer(room) ? curPlayer(room).id : null,
+    next: room.started && nextPlayer(room) ? nextPlayer(room).id : null,
+    phase: room.phase,
     turnLeft: room.turnEnds ? Math.max(0, room.turnEnds - now) : null,
     busyLeft: Math.max(0, room.busyUntil - now),
     lastThrow: room.lastThrow,
+    lastPack: room.lastPack,
     players: room.players.map((p) => ({
       id: p.id, name: p.name, color: p.color, x: p.x, z: p.z, score: p.score,
-      yaw: p.yaw, pitch: p.pitch, cpu: !!p.cpu, online: !!p.cpu || p.clients.size > 0,
+      yaw: p.yaw, pitch: p.pitch, heavy: p.heavy, cpu: !!p.cpu, online: !!p.cpu || p.clients.size > 0,
     })),
   };
 }
@@ -83,6 +87,10 @@ export function viewFor(room, member) {
 function send(res, event, data) { res.write((event ? `event: ${event}\n` : '') + `data: ${JSON.stringify(data)}\n\n`); }
 function broadcast(room) {
   for (const p of room.players) for (const res of p.clients) send(res, null, viewFor(room, p));
+}
+function broadcastSay(room, p, what) {
+  const data = { id: p.id, ...what };
+  for (const q of room.players) for (const res of q.clients) send(res, 'say', data);
 }
 function broadcastAim(room, p) {
   const data = { id: p.id, yaw: p.yaw, pitch: p.pitch };
@@ -100,6 +108,7 @@ function startTurn(room) {
   room.turnEnds = null;
   if (!room.started || room.over || !room.players.length) return;
   const p = curPlayer(room);
+  room.phase = 'move';
   const wait = Math.max(0, room.busyUntil - Date.now());
   room.turnEnds = Date.now() + wait + TURN_LIMIT * 1000;
   room.clock = setTimeout(() => {
@@ -116,9 +125,24 @@ function startTurn(room) {
   }
 }
 
+// A bot first walks to cover from the next thrower, then aims and throws.
 function botTurn(room, bot) {
   if (curPlayer(room) !== bot || room.over) return;
-  const plan = planThrow(bot, room.players.filter((o) => o !== bot), windFor(room.seed, room.turn), room.map, rand);
+  const spot = chooseCover(bot, nextPlayer(room), room.map, room.players, rand);
+  bot.x = +spot.x.toFixed(3); bot.z = +spot.z.toFixed(3);
+  room.phase = 'aim';
+  broadcast(room);
+  room.botTimer = setTimeout(() => {
+    try { botAim(room, bot); } catch (e) { console.error(`Bot ${bot.name} in room ${room.code} failed:`, e); }
+  }, 900);
+  if (room.botTimer.unref) room.botTimer.unref();
+}
+
+function botAim(room, bot) {
+  if (curPlayer(room) !== bot || room.over) return;
+  // now and then a bot packs a heavier snowball instead of throwing
+  if ((bot.heavy || 1) === 1 && rand() < 0.2) { doPack(room, bot); broadcast(room); return; }
+  const plan = planThrow(bot, room.players.filter((o) => o !== bot), windFor(room.seed, room.turn), room.map, rand, 1, bot.heavy || 1);
   bot.yaw = plan.yaw; bot.pitch = plan.pitch;
   broadcastAim(room, bot);
   room.botTimer = setTimeout(() => {
@@ -132,24 +156,46 @@ function botTurn(room, bot) {
 function doThrow(room, p, yaw, pitch, power) {
   const wind = windFor(room.seed, room.turn);
   const targets = room.players.filter((o) => o !== p).map((o) => ({ id: o.id, x: o.x, z: o.z }));
-  const sim = simulate(p, yaw, pitch, power, wind, targets, room.map);
+  const heavy = p.heavy || 1;
+  const sim = simulate(p, yaw, pitch, power, wind, targets, room.map, 1200, null, heavy);
   const victim = sim.hit ? room.players.find((o) => o.id === sim.hit) : null;
   p.yaw = yaw; p.pitch = pitch;
   room.lastThrow = {
     n: ++room.throwN, by: p.id, turn: room.turn, yaw, pitch, power, x: p.x, z: p.z,
-    hit: victim ? victim.id : null, steps: sim.n - 1, from: victim ? { x: victim.x, z: victim.z } : null,
+    heavy, hit: victim ? victim.id : null, part: victim ? sim.part : null, steps: sim.n - 1, from: victim ? { x: victim.x, z: victim.z } : null,
   };
-  room.busyUntil = Date.now() + throwShowMs(sim.n - 1, !!victim);
-  if (victim) { p.score += 1; place(room, victim); }
+  room.busyUntil = Date.now() + throwShowMs(sim.n - 1, victim ? sim.part : null);
+  p.heavy = 1;
+  if (victim) {
+    p.score += HIT_POINTS[sim.part] * heavy;
+    victim.heavy = 1; // dropped it
+    place(room, victim);
+    if (p.cpu && rand() < 0.6) broadcastSay(room, p, { emote: 'cheer' });
+    if (victim.cpu && rand() < 0.5) broadcastSay(room, victim, { line: 3 });
+  }
   room.lastActive = Date.now();
   if (p.score >= WIN_SCORE) {
     room.over = { winner: p.id };
     clearTimers(room); room.turnEnds = null;
     return;
   }
+  nextTurn(room);
+}
+
+function nextTurn(room) {
   room.cur = (room.cur + 1) % room.players.length;
   room.turn += 1;
   startTurn(room);
+}
+
+// Spend the turn packing a heavy snowball: your next hit counts triple.
+function doPack(room, p) {
+  if ((p.heavy || 1) > 1) throw new Error('You already have a heavy snowball. Throw it first');
+  p.heavy = HEAVY_MULT;
+  room.lastPack = { n: ++room.packN, by: p.id, heavy: p.heavy };
+  room.busyUntil = Date.now() + PACK_MS;
+  room.lastActive = Date.now();
+  nextTurn(room);
 }
 
 function removeMember(room, p) {
@@ -187,7 +233,7 @@ export const actions = {
     const member = {
       id: crypto.randomBytes(5).toString('hex'), token: crypto.randomUUID(),
       name: cleanName(name, `Player ${room.players.length + 1}`), color: pickColor(room, color),
-      x: 0, z: 0, yaw: 0, pitch: 0.6, score: 0, cpu: false, clients: new Set(), aimAt: 0, placed: false,
+      x: 0, z: 0, yaw: 0, pitch: 0.6, score: 0, heavy: 1, cpu: false, clients: new Set(), aimAt: 0, sayTimes: [], placed: false,
     };
     room.players.push(member);
     if (room.started) place(room, member);
@@ -205,7 +251,7 @@ export const actions = {
     const used = new Set(room.players.map((p) => p.name));
     room.players.push({
       id: crypto.randomBytes(5).toString('hex'), token: null, name: BOT_NAMES.find((n) => !used.has(n)) || 'Snowbot',
-      color: pickColor(room), x: 0, z: 0, yaw: 0, pitch: 0.6, score: 0, cpu: true, clients: new Set(), placed: false,
+      color: pickColor(room), x: 0, z: 0, yaw: 0, pitch: 0.6, score: 0, heavy: 1, cpu: true, clients: new Set(), placed: false,
     });
   },
 
@@ -223,7 +269,7 @@ export const actions = {
     room.started = true;
     room.seed = crypto.randomInt(1, 2 ** 31);
     room.map = makeMap(room.seed);
-    for (const p of room.players) { p.placed = false; p.score = 0; }
+    for (const p of room.players) { p.placed = false; p.score = 0; p.heavy = 1; }
     for (const p of room.players) place(room, p);
     room.cur = crypto.randomInt(room.players.length);
     room.turn = 0; room.over = null; room.busyUntil = 0;
@@ -234,7 +280,7 @@ export const actions = {
     requireHost(room, member);
     if (!room.over) throw new Error('The round is still going');
     room.over = null; room.round += 1;
-    for (const p of room.players) { p.placed = false; p.score = 0; }
+    for (const p of room.players) { p.placed = false; p.score = 0; p.heavy = 1; }
     for (const p of room.players) place(room, p);
     room.cur = crypto.randomInt(room.players.length);
     room.turn += 1;
@@ -250,6 +296,42 @@ export const actions = {
     member.aimAt = now;
     member.yaw = toYaw(yaw); member.pitch = toPitch(pitch);
     broadcastAim(room, member);
+    return 'quiet';
+  },
+
+  // Walk somewhere inside your move ring, once per turn, before throwing. Moving is optional.
+  move({ x, z }, room, member) {
+    if (!room.started) throw new Error('The game has not started');
+    if (room.over) throw new Error('The round is over');
+    if (curPlayer(room) !== member) throw new Error('It is not your turn');
+    if (room.phase !== 'move') throw new Error('You have already moved this turn');
+    if (Date.now() < room.busyUntil - 150) throw new Error('Wait for the last snowball to land');
+    if (![x, z].every((v) => typeof v === 'number' && Number.isFinite(v))) throw new Error('Bad move');
+    const to = clampMove(member, { x, z });
+    if (!standOk(to.x, to.z, room.map, room.players.filter((o) => o !== member))) throw new Error("You can't stand there");
+    member.x = +to.x.toFixed(3); member.z = +to.z.toFixed(3);
+    room.phase = 'aim';
+  },
+
+  pack(_body, room, member) {
+    if (!room.started) throw new Error('The game has not started');
+    if (room.over) throw new Error('The round is over');
+    if (curPlayer(room) !== member) throw new Error('It is not your turn');
+    if (Date.now() < room.busyUntil - 150) throw new Error('Wait for the last snowball to land');
+    doPack(room, member);
+  },
+
+  // Quick chat: one of the fixed lines or emotes. Works in the lobby and in the game.
+  say({ line, emote }, room, member) {
+    const now = Date.now();
+    member.sayTimes = (member.sayTimes || []).filter((t) => now - t < 5000);
+    if (member.sayTimes.length >= 4) throw new Error('Slow down a little');
+    let what;
+    if (Number.isInteger(line) && line >= 0 && line < CHAT_LINES.length) what = { line };
+    else if (EMOTES.includes(emote)) what = { emote };
+    else throw new Error('Unknown message');
+    member.sayTimes.push(now);
+    broadcastSay(room, member, what);
     return 'quiet';
   },
 

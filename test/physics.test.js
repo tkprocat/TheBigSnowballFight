@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import {
   simulate, windFor, makeMap, spawnPoint, planThrow, obstacleHit, mulberry32, throwShowMs,
-  BALL_R, PITCH_MIN, PITCH_MAX, ARENA,
+  BALL_R, PITCH_MIN, PITCH_MAX, ARENA, HIT_POINTS, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover,
 } from '../public/physics.js';
 
 const EMPTY = { walls: [], trees: [], deco: [] };
@@ -84,7 +84,68 @@ test('a perfect computer player hits an open target, and plans stay in range', (
   }
 });
 
-test('show time covers the flight', () => {
-  assert.ok(throwShowMs(240, false) > 2000);
-  assert.ok(throwShowMs(240, true) > throwShowMs(240, false));
+test('show time covers the flight, and head shots get extra for the slow-motion camera', () => {
+  assert.ok(throwShowMs(240, null) > 2000);
+  assert.ok(throwShowMs(240, 'body') > throwShowMs(240, null));
+  assert.ok(throwShowMs(240, 'head') > throwShowMs(240, 'body') + 1500);
+});
+
+test('tells a head hit from a body hit', () => {
+  const target = { id: 'bob', x: 0, z: 6 };
+  const parts = new Set();
+  for (let pitch = 0.05; pitch < 0.6; pitch += 0.01)
+    for (let pw = 0; pw <= 1; pw += 0.02) {
+      const s = simulate({ x: 0, z: 0 }, 0, pitch, pw, CALM, [target], EMPTY);
+      if (s.hit) {
+        parts.add(s.part);
+        const dy = s.end.y;
+        if (s.part === 'head') assert.ok(dy > 1.2, `head hit at y=${dy}`);
+      } else assert.strictEqual(s.part, null);
+    }
+  assert.deepStrictEqual([...parts].sort(), ['body', 'head']);
+  assert.deepStrictEqual(HIT_POINTS, { head: 2, body: 1 });
+});
+
+test('moves are kept inside the 5 m ring', () => {
+  assert.deepStrictEqual(clampMove({ x: 0, z: 0 }, { x: 3, z: 0 }), { x: 3, z: 0 });
+  const far = clampMove({ x: 1, z: 1 }, { x: 1, z: 20 });
+  assert.ok(Math.abs(Math.hypot(far.x - 1, far.z - 1) - MOVE_RADIUS) < 1e-9);
+});
+
+test('you cannot stand in a wall, a tree, on someone, or outside the arena', () => {
+  const map = { walls: [{ x: 0, z: 0, w: 4, h: 1.2, d: 0.7, ry: 0 }], trees: [{ x: 10, z: 0, s: 1 }], deco: [] };
+  assert.ok(!standOk(0, 0, map, []));
+  assert.ok(!standOk(10.3, 0, map, []));
+  assert.ok(!standOk(5, 5, map, [{ x: 5.5, z: 5 }]));
+  assert.ok(!standOk(0, ARENA + 10, map, []));
+  assert.ok(!standOk(NaN, 0, map, []));
+  assert.ok(standOk(0, 3, map, []));
+});
+
+test('walls and other players block the line of sight', () => {
+  const map = { walls: [{ x: 0, z: 5, w: 4, h: 1.5, d: 0.7, ry: 0 }], trees: [], deco: [] };
+  assert.ok(lineBlocked({ x: 0, z: 0 }, { x: 0, z: 10 }, map, []));
+  assert.ok(!lineBlocked({ x: 10, z: 0 }, { x: 10, z: 10 }, map, []));
+  assert.ok(lineBlocked({ x: 10, z: 0 }, { x: 10, z: 10 }, map, [{ x: 10, z: 5 }]), 'hiding behind Joe works');
+});
+
+test('a computer player walks to cover from the next thrower when it can', () => {
+  // a wall off to one side; stepping behind it hides the bot from the next thrower
+  const map = { walls: [{ x: 3, z: -2, w: 3, h: 1.5, d: 0.7, ry: 0 }], trees: [], deco: [] };
+  const bot = { x: 0, z: 0 }, jack = { x: 0, z: -15 };
+  assert.ok(!lineBlocked(jack, bot, map, []), 'exposed to start with');
+  const spot = chooseCover(bot, jack, map, [bot, jack], mulberry32(4));
+  assert.ok(Math.hypot(spot.x, spot.z) <= MOVE_RADIUS + 1e-9);
+  assert.ok(standOk(spot.x, spot.z, map, [jack]));
+  assert.ok(lineBlocked(jack, spot, map, []), 'hidden behind the wall');
+});
+
+test('a heavy snowball flies a bit shorter and the wind moves it less', () => {
+  const wind = { x: 2, z: 0 };
+  const normal = simulate({ x: 0, z: 0 }, 0, 0.6, 0.8, wind, [], EMPTY);
+  const heavy = simulate({ x: 0, z: 0 }, 0, 0.6, 0.8, wind, [], EMPTY, 1200, null, 2);
+  assert.ok(heavy.end.z < normal.end.z, 'shorter');
+  assert.ok(Math.abs(heavy.end.x) < Math.abs(normal.end.x) * 0.6, 'less drift');
+  const again = simulate({ x: 0, z: 0 }, 0, 0.6, 0.8, wind, [], EMPTY, 1200, null, 2);
+  assert.strictEqual(again.n, heavy.n, 'still deterministic');
 });

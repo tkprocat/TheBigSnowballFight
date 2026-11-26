@@ -47,16 +47,18 @@ export function obstacleHit(x, y, z, map) {
 export function launchPoint(from, yaw) { return { x: from.x + Math.sin(yaw) * 0.45, y: 1.75, z: from.z + Math.cos(yaw) * 0.45 }; }
 
 /* simulate: returns sampled path + what it hit. targets = [{id,x,z}] */
-export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps = 1200, probe = null) {
-  const v = SPEED_MIN + clamp(power, 0, 1) * (SPEED_MAX - SPEED_MIN);
+// `heavy` is the packed snowball's multiplier (1 = normal): heavier balls fly a little slower and the wind moves them less.
+export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps = 1200, probe = null, heavy = 1) {
+  const v = (SPEED_MIN + clamp(power, 0, 1) * (SPEED_MAX - SPEED_MIN)) * (heavy > 1 ? HEAVY_SPEED : 1);
+  const wk = heavy > 1 ? HEAVY_WIND : 1;
   const p = launchPoint(from, yaw);
   let x = p.x, y = p.y, z = p.z;
   let vx = Math.sin(yaw) * Math.cos(pitch) * v, vy = Math.sin(pitch) * v, vz = Math.cos(yaw) * Math.cos(pitch) * v;
   const pts = new Float32Array((maxSteps + 1) * 3);
   pts[0] = x; pts[1] = y; pts[2] = z;
-  let n = 1, hit = null, kind = 'out', best = Infinity;
+  let n = 1, hit = null, part = null, kind = 'out', best = Infinity;
   for (let i = 0; i < maxSteps; i++) {
-    vx += wind.x * DT; vz += wind.z * DT; vy -= GRAV * DT;
+    vx += wind.x * wk * DT; vz += wind.z * wk * DT; vy -= GRAV * DT;
     vx *= 0.9995; vz *= 0.9995; vy *= 0.9995;
     x += vx * DT; y += vy * DT; z += vz * DT;
     pts[n * 3] = x; pts[n * 3 + 1] = y; pts[n * 3 + 2] = z; n++;
@@ -64,14 +66,16 @@ export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps =
     let done = false;
     for (const t of targets) {
       const bx = x - t.x, bz = z - t.z;
-      if (Math.hypot(bx, y - 1.0, bz) < 0.55 + BALL_R || Math.hypot(bx, y - 1.72, bz) < 0.34 + BALL_R || (y < 0.7 && Math.hypot(bx, bz) < 0.3 + BALL_R)) { hit = t.id; kind = 'player'; done = true; break; }
+      // the head is checked first, so a ball clipping both counts as a head hit
+      if (Math.hypot(bx, y - 1.72, bz) < 0.34 + BALL_R) { hit = t.id; part = 'head'; kind = 'player'; done = true; break; }
+      if (Math.hypot(bx, y - 1.0, bz) < 0.55 + BALL_R || (y < 0.7 && Math.hypot(bx, bz) < 0.3 + BALL_R)) { hit = t.id; part = 'body'; kind = 'player'; done = true; break; }
     }
     if (done) break;
     const ob = obstacleHit(x, y, z, map); if (ob) { kind = ob; break; }
     if (y <= BALL_R) { pts[(n - 1) * 3 + 1] = BALL_R; kind = 'ground'; break; }
     if (Math.hypot(x, z) > 80) { kind = 'out'; break; }
   }
-  return { pts, n, hit, kind, end: { x: pts[(n - 1) * 3], y: pts[(n - 1) * 3 + 1], z: pts[(n - 1) * 3 + 2] }, best };
+  return { pts, n, hit, part, kind, end: { x: pts[(n - 1) * 3], y: pts[(n - 1) * 3 + 1], z: pts[(n - 1) * 3 + 2] }, best };
 }
 
 export function windFor(seed, turn) {
@@ -93,18 +97,33 @@ export function spawnPoint(rng, map, others) {
 }
 
 // Game settings shared by the browser and the server.
-export const WIN_SCORE = 5;      // hits needed to win a round
+export const WIN_SCORE = 10;     // points needed to win a round
+export const HIT_POINTS = { head: 2, body: 1 };
+// Heavy snowballs: spend a turn packing instead of throwing and your next hit counts triple.
+// One pack at a time: two turns for 3x a hit beats two plain throws unless you're likely to be hit first.
+// You drop it if you get hit before you throw it.
+export const HEAVY_MAX = 3, HEAVY_MULT = 3, HEAVY_SPEED = 0.88, HEAVY_WIND = 0.5, PACK_MS = 1400;
+// Quick chat: fixed lines and emotes, so there is nothing to moderate.
+export const CHAT_LINES = ['Nice shot!', 'Missed me!', 'Watch this…', 'Oops!', 'Hide!', 'Incoming!', 'So close!', 'GG'];
+export const EMOTES = ['wave', 'dance', 'cheer'];
 export const TURN_LIMIT = 30;    // seconds per turn before a throw is made for you
 export const MAX_PLAYERS = 8;
 export const COLORS = ['#e2434b', '#2f7de1', '#f2a20c', '#2bb673', '#9b5de5', '#ff6fa3', '#14b8c4', '#8a5a2b'];
 export const BOT_NAMES = ['Frosty', 'Blizzard', 'Sleet', 'Flurry', 'Icicle', 'Slushie', 'Hailey', 'Yeti'];
 
 // How long the client needs to show a throw: wind-up, flight, and the pause after it lands.
-export function throwShowMs(steps, hit) { return 100 + steps * DT * 1000 + (hit ? 1600 : 1000); }
+// Head shots play the end of the flight in slow motion (the critical-hit camera), then hold a little longer.
+export const SLOW_WINDOW = 0.6, SLOW_SPEED = 0.25; // seconds of flight shown slowed, and how slow
+export const HOLD_MS = { head: 2000, body: 1600, miss: 1000 };
+export function throwShowMs(steps, part) {
+  const flight = steps * DT * 1000;
+  const slow = part === 'head' ? Math.min(flight, SLOW_WINDOW * 1000) * (1 / SLOW_SPEED - 1) : 0;
+  return 100 + flight + slow + HOLD_MS[part || 'miss'];
+}
 
 // A computer player's throw: search for the shot that comes closest to a random opponent, then add some error.
 // `rng` returns numbers in [0, 1); `error` scales the miss (0 = perfect).
-export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1) {
+export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1, heavy = 1) {
   if (!opponents.length) return { yaw: Math.atan2(-p.x, -p.z), pitch: 0.6, power: 0.5 };
   const tgt = opponents[Math.floor(rng() * opponents.length)];
   const base = Math.atan2(tgt.x - p.x, tgt.z - p.z);
@@ -112,7 +131,7 @@ export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1)
   for (const pitch of [0.35, 0.6, 0.85]) {
     for (let dy = -0.36; dy <= 0.361; dy += 0.04) {
       for (let pw = 0.02; pw <= 1; pw += 0.04) {
-        const s = simulate(p, base + dy, pitch, pw, wind, [{ id: 'tgt', x: tgt.x, z: tgt.z }], map, 900, tgt);
+        const s = simulate(p, base + dy, pitch, pw, wind, [{ id: 'tgt', x: tgt.x, z: tgt.z }], map, 900, tgt, heavy);
         const d = s.hit ? 0 : s.best;
         if (d < best.d) best = { d, yaw: base + dy, pitch, power: pw };
       }
@@ -124,4 +143,52 @@ export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1)
     pitch: clamp(best.pitch + g() * 0.04, PITCH_MIN, PITCH_MAX),
     power: clamp(best.power + g() * 0.06, 0.02, 1),
   };
+}
+
+// ---------- moving before you throw ----------
+export const MOVE_RADIUS = 5; // metres you may walk at the start of your turn
+
+// Pull a wanted spot back inside your move ring.
+export function clampMove(from, to) {
+  const dx = to.x - from.x, dz = to.z - from.z, d = Math.hypot(dx, dz);
+  if (d <= MOVE_RADIUS) return { x: to.x, z: to.z };
+  return { x: from.x + dx / d * MOVE_RADIUS, z: from.z + dz / d * MOVE_RADIUS };
+}
+
+// Can someone stand here? Not inside a wall or tree, not on top of another player, not out of the arena.
+export function standOk(x, z, map, others) {
+  if (!Number.isFinite(x) || !Number.isFinite(z) || Math.hypot(x, z) > ARENA + 4) return false;
+  for (const w of map.walls) {
+    const dx = x - w.x, dz = z - w.z, c = Math.cos(-w.ry), s = Math.sin(-w.ry);
+    if (Math.abs(dx * c - dz * s) < w.w / 2 + 0.55 && Math.abs(dx * s + dz * c) < w.d / 2 + 0.55) return false;
+  }
+  for (const t of map.trees) if (Math.hypot(x - t.x, z - t.z) < 0.5 * t.s + 0.6) return false;
+  for (const o of others) if (Math.hypot(x - o.x, z - o.z) < 1.3) return false;
+  return true;
+}
+
+// Is the straight line between two players blocked at chest height by a wall, a tree or someone else?
+export function lineBlocked(a, b, map, others) {
+  const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(2, Math.ceil(d / 0.25));
+  for (let i = 1; i < n; i++) {
+    const t = i / n, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+    if (obstacleHit(x, 1.2, z, map)) return true;
+    for (const o of others) if (Math.hypot(x - o.x, z - o.z) < 0.55) return true;
+  }
+  return false;
+}
+
+// A computer player's move: somewhere in its ring, hidden from the next thrower if it can find such a spot.
+export function chooseCover(p, next, map, players, rng = Math.random) {
+  const others = players.filter((o) => o !== p);
+  const shields = players.filter((o) => o !== p && o !== next);
+  let best = { x: p.x, z: p.z }, bestScore = (next && lineBlocked(next, p, map, shields) ? 10 : 0) + rng();
+  for (let i = 0; i < 32; i++) {
+    const a = rng() * TAU, r = Math.sqrt(rng()) * MOVE_RADIUS;
+    const c = { x: p.x + Math.cos(a) * r, z: p.z + Math.sin(a) * r };
+    if (!standOk(c.x, c.z, map, others)) continue;
+    const score = (next && lineBlocked(next, c, map, shields) ? 10 : 0) + rng();
+    if (score > bestScore) { best = c; bestScore = score; }
+  }
+  return best;
 }
