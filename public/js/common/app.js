@@ -41,9 +41,23 @@ $('#nameIn').addEventListener('input', saveMe);
 renderSwatches();
 
 /* ---------- lobby and game ---------- */
+// Someone joined or left, or the host changed (sent by the server as plain names, shown as text).
+function onNotice(d) {
+  if (!d || typeof d !== 'object') return;
+  const parts = [];
+  if (d.joined) parts.push(safeName(d.joined) + ' joined' + (d.watching ? ' to watch' : ''));
+  if (d.left) parts.push(safeName(d.left) + ' left');
+  if (d.host) parts.push(d.host === NET.id ? 'You are the host now' : safeName(d.hostName) + ' is the host now');
+  if (parts.length) toast(parts.join(' · '), '', 2200, true);
+}
+
 const handlers = {
   view: onView,
-  event(name, d) { if (name === 'say') onSay(d); else if (active) active.onEvent(name, d); },
+  event(name, d) {
+    if (name === 'say') onSay(d);
+    else if (name === 'notice') onNotice(d);
+    else if (active) active.onEvent(name, d);
+  },
   lost() { showMenu(); toast('Lost the lobby', 'It may have expired. Create a new one.', 2600); },
 };
 
@@ -97,7 +111,7 @@ function showMenu() {
   if (NET.code) leaveOnline();
   exitGame();
   S.screen = 'menu'; S.watching = false; S.followId = null; document.body.classList.remove('watching');
-  $('#menu').hidden = false; $('#lobby').hidden = true; $('#game').hidden = true; $('#over').hidden = true; $('#chatPanel').hidden = true; $('#lobbyFeed').textContent = '';
+  $('#menu').hidden = false; $('#lobby').hidden = true; $('#game').hidden = true; $('#over').hidden = true; $('#chatPanel').hidden = true; $('#gameMenu').hidden = true; $('#lobbyFeed').textContent = '';
 }
 
 initChat();
@@ -105,11 +119,16 @@ initLobby(showMenu);
 $('#hostBtn').onclick = hostLobby;
 $('#joinBtn').onclick = () => joinLobby($('#codeIn').value);
 $('#codeIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinLobby($('#codeIn').value); });
-$('#menuBtn').onclick = showMenu;
+// ☰ in a game asks first: a stray tap shouldn't end your game
+const closeGameMenu = () => { $('#gameMenu').hidden = true; };
+$('#menuBtn').onclick = () => { $('#gameMenu').hidden = false; $('#resumeBtn').focus(); };
+$('#resumeBtn').onclick = closeGameMenu;
+$('#leaveBtn').onclick = () => { closeGameMenu(); showMenu(); };
+$('#gameMenu').addEventListener('click', (e) => { if (e.target.id === 'gameMenu') closeGameMenu(); });
 $('#overMenuBtn').onclick = showMenu;
 $('#againBtn').onclick = () => api('again').catch((e) => toast(e.message, '', 1800));
-$('#muteBtn').onclick = () => { $('#muteBtn').textContent = toggleMute() ? '✕' : '♪'; };
-$('#muteBtn').textContent = isMuted() ? '✕' : '♪';
+$('#muteBtn').onclick = () => { $('#muteBtn').textContent = toggleMute() ? '🔇' : '🔊'; };
+$('#muteBtn').textContent = isMuted() ? '🔇' : '🔊';
 
 addEventListener('keydown', (e) => {
   if (S.screen !== 'game' || e.target.tagName === 'INPUT') return;
@@ -134,7 +153,14 @@ $('#scoreHud').addEventListener('click', (e) => {
   note.textContent = 'Create a lobby and send friends the code or invite link. Joining works mid-game too.';
   $('#hostBtn').disabled = false; $('#joinBtn').disabled = false;
   const q = new URLSearchParams(location.search).get('room');
-  if (q) $('#codeIn').value = q.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+  if (q) {
+    // came from an invite link: say so, and make Join the obvious button
+    const code = q.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+    $('#codeIn').value = code;
+    note.textContent = "You're invited to lobby " + code + '. Pick a name and colour, then press Join.';
+    $('#joinBtn').classList.add('primary'); $('#hostBtn').classList.remove('primary');
+    $('#joinBtn').textContent = 'Join lobby ' + code;
+  }
   const saved = sessGet();
   if (saved) connect(saved, handlers);
 })();

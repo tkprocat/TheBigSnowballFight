@@ -99,3 +99,31 @@ test('the host picks the bot level in the lobby; everyone sees it', () => {
   assert.throws(() => act('setBotLevel', host.code, host.token, { level: 'hard' }), /before the game starts/);
   stop(room);
 });
+
+test('names are unique in a room; the host can add several bots at once', () => {
+  const host = actions.create({ name: 'Frosty' });
+  const room = rooms.get(host.code);
+  actions.join({ code: host.code, name: 'Frosty' });
+  actions.join({ code: host.code, name: 'Frosty' });
+  assert.deepStrictEqual(room.players.map((p) => p.name), ['Frosty', 'Frosty 2', 'Frosty 3']);
+  act('addBot', host.code, host.token, { count: 4 });
+  assert.strictEqual(room.players.filter((p) => p.cpu).length, 4);
+  assert.strictEqual(new Set(room.players.map((p) => p.name)).size, room.players.length, 'bots get unique names too');
+  act('addBot', host.code, host.token, { count: 99 });
+  assert.strictEqual(room.players.length, MAX_PLAYERS, 'stops at a full room');
+  assert.throws(() => act('addBot', host.code, host.token, { count: 2 }), /full/);
+});
+
+test('everyone hears when someone joins or leaves, and who hosts after the host leaves', () => {
+  const { host, others, room } = lobby(2);
+  const res = { lines: [], write(x) { this.lines.push(x); }, end() {} };
+  room.players[1].clients.add(res);
+  actions.join({ code: host.code, name: 'Late' });
+  assert.match(res.lines.join(''), /event: notice\ndata: \{"joined":"Late","watching":false\}/);
+  act('leave', host.code, host.token);
+  const last = res.lines.filter((l) => l.startsWith('event: notice')).pop();
+  assert.match(last, /"left":"Host"/);
+  assert.match(last, new RegExp('"host":"' + room.players[0].id + '"'));
+  assert.strictEqual(room.host, room.players[0]);
+  void others;
+});

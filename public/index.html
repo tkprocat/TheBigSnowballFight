@@ -32,7 +32,8 @@
       <div class="row"><input type="text" id="codeIn" maxlength="4" placeholder="CODE" aria-label="Lobby code"><button class="btn" id="joinBtn" disabled>Join lobby</button></div>
       <p class="note">Playing alone? Create a lobby and add computer players.</p>
     </div>
-    <p class="keys"><b>Turn-based:</b> walk up to 5 m (arrows or tap the snow, Space to confirm), then aim with ← → ↑ ↓ and hold Space to throw, or pack a heavy snowball with H. <b>Realtime:</b> WASD to run, the mouse to aim, hold the left button to throw, and walk over snowballs to pick them up. Quick chat with C.</p>
+    <p class="keys touch"><b>Turn-based:</b> tap the snow to pick where to walk, then the big button; aim with the arrow pad or by dragging, and hold the throw button. <b>Realtime:</b> the stick bottom left runs (push it to the edge to sprint), drag the view to aim, and tap THROW. Walk over gold rings to pick up snowballs. 💬 for quick chat.</p>
+    <p class="keys desk"><b>Turn-based:</b> walk up to 5 m (arrows or tap the snow, Space to confirm), then aim with ← → ↑ ↓ and hold Space to throw, or pack a heavy snowball with H. <b>Realtime:</b> WASD to run, the mouse to aim, click to throw, hold Shift to sprint, and walk over snowballs to pick them up. Quick chat with C.</p>
   </div>
 </div>
 
@@ -54,7 +55,7 @@
       <h2>Snowfighters</h2>
       <ul class="plist" id="lobbyList"></ul>
       <p class="note" id="watchList" hidden></p>
-      <div class="row"><button class="btn" id="lobbyBot">+ Computer player</button><button class="btn" id="lobbyWatch">Watch instead</button></div>
+      <div class="row"><button class="btn" id="lobbyBot">+ Computer player</button><button class="btn" id="lobbyBot4">+4</button><button class="btn" id="lobbyWatch">Watch instead</button></div>
       <div class="row" id="botLevelRow"><span class="lbl">Computer players</span>
         <div class="seg" role="group" aria-label="Computer player difficulty"><button data-level="easy">Easy</button><button data-level="normal">Normal</button><button data-level="hard">Hard</button></div>
       </div>
@@ -109,6 +110,16 @@
 <div id="chatPanel" hidden role="dialog" aria-label="Quick chat">
   <div class="chatgrid" id="chatLines"></div>
   <div class="chatrow" id="chatEmotes"></div>
+</div>
+<div id="gameMenu" hidden role="dialog" aria-label="Game menu">
+  <div class="card">
+    <p class="menuTitle">Leave this game?</p>
+    <p class="note">The game keeps going while this is open.</p>
+    <div class="row" style="justify-content:center">
+      <button class="btn primary" id="resumeBtn">Keep playing</button>
+      <button class="btn" id="leaveBtn">Leave game</button>
+    </div>
+  </div>
 </div>
 <div id="toast"></div>
 <div id="over" hidden>

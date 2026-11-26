@@ -42,7 +42,7 @@ export function updateReadout() {
   if ($('#turnSub').textContent !== sub) $('#turnSub').textContent = sub;
   $('#meter').style.visibility = 'hidden';
   $('#angleTxt').textContent = 'Angle ' + Math.round(R.pitch * 180 / Math.PI) + '°';
-  $('#powerTxt').textContent = p ? p.ammo + ' / ' + CARRY_MAX + ' snowballs' : '';
+  $('#powerTxt').textContent = p ? p.ammo + ' / ' + CARRY_MAX + ' snowballs' + (R.landsAt != null ? ' · lands ' + Math.round(R.landsAt) + ' m' : '') : '';
   const play = canPlay();
   $('#controls').style.opacity = play ? 1 : 0.45;
   $('#throwBtn').disabled = !play || !p.ammo || R.sprinting;

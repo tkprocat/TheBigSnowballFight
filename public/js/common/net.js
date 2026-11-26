@@ -34,7 +34,7 @@ export function connect({ code, token, id }, on) {
   const es = new EventSource('/events?code=' + encodeURIComponent(code) + '&token=' + encodeURIComponent(token));
   NET.es = es;
   es.onmessage = (e) => { try { const v = JSON.parse(e.data); if (v && typeof v === 'object') { NET.view = v; on.view(v); } } catch (err) { console.error(err); } };
-  for (const name of ['aim', 'say', 'rt']) es.addEventListener(name, (e) => { try { on.event(name, JSON.parse(e.data)); } catch (err) { console.error(err); } });
+  for (const name of ['aim', 'say', 'rt', 'notice']) es.addEventListener(name, (e) => { try { on.event(name, JSON.parse(e.data)); } catch (err) { console.error(err); } });
   es.onerror = () => {
     if (es.readyState === EventSource.CLOSED && NET.es === es) {
       NET.code = null; sessClear(); es.close(); NET.es = null;

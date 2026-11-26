@@ -23,6 +23,7 @@ export function onSay(d) {
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = safeColor(vp && vp.color);
     const t = document.createElement('span'); t.textContent = safeName(vp && vp.name) + ': ' + (line != null ? CHAT_LINES[line] : EMOTE_LABEL[emote]);
     li.append(dot, t); $('#lobbyFeed').prepend(li);
+    if (d.id !== NET.id) toast(t.textContent, '', 1800, true); // the feed may be below the fold on a phone
     while ($('#lobbyFeed').children.length > 20) $('#lobbyFeed').lastChild.remove();
     return;
   }
@@ -30,7 +31,7 @@ export function onSay(d) {
   if (p) { showSay(p, what, CHAT_LINES); if (line != null) sfx.tick(); }
   else if (line != null) { // a spectator spoke
     const vs = NET.view && (NET.view.spectators || []).find((q) => q.id === d.id);
-    toast(safeName(vs && vs.name) + ': ' + CHAT_LINES[line], '', 1800);
+    toast(safeName(vs && vs.name) + ': ' + CHAT_LINES[line], '', 1800, true);
   }
 }
 

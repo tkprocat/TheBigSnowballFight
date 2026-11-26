@@ -151,3 +151,24 @@ body.watching #controls,body.watching #hint{display:none!important}
 .seg button{border:0;background:none;padding:8px 12px;font-weight:900;font-size:.9rem;color:var(--ink-soft)}
 .seg button[aria-pressed=true]{background:var(--ink);color:#fff}
 .seg button:disabled{cursor:default}
+
+/* the in-game menu (☰) */
+#gameMenu{position:fixed;inset:0;display:grid;place-items:center;background:rgba(20,35,61,.35);padding-left:var(--sal);padding-right:var(--sar);z-index:6}
+#gameMenu .card{max-width:360px;width:100%;text-align:center;align-items:center}
+.menuTitle{font-family:var(--display);font-size:1.4rem;margin:0}
+/* small toasts: chat lines and join/leave notices */
+#toast.small{font-size:clamp(1.05rem,4vw,1.35rem);top:22%}
+.youtag{font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:var(--cherry);border-radius:999px;padding:1px 6px;flex:none}
+.sc .heavytag,.sc .nexttag{flex:none}
+@media (hover:hover) and (pointer:fine){body[data-mode=realtime] #throwBtn{display:none}}
+#turnMain.hurry{color:#ffd0d2}
+#packBtn.armed{background:var(--gold);color:var(--ink);opacity:1;box-shadow:0 0 0 2px var(--ink),0 3px 10px rgba(20,35,61,.18)}
+body.killcam .hud{opacity:.12;transition:opacity .2s}
+.keys.touch{display:none}
+@media (pointer:coarse){.keys.touch{display:block}.keys.desk{display:none}}
+#toast{text-wrap:balance}
+@media (max-width:520px){
+  #readout{flex-direction:column;align-items:center;gap:0;font-size:.78rem;text-align:center}
+  body[data-mode=realtime] #turnHud{top:calc(var(--sat) + 150px);bottom:auto}
+  body[data-mode=realtime] #turnSub{display:none}
+}

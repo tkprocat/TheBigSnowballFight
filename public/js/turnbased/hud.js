@@ -40,20 +40,23 @@ function updatePackBtn() {
   const p = curPlayer(), lvl = p ? (p.heavy || 1) : 1;
   $('#packBtn').textContent = lvl > 1 ? 'Packed ×' + lvl : 'Pack ×' + HEAVY_MULT;
   $('#packBtn').disabled = !canControl() || T.charging || lvl > 1;
+  $('#packBtn').classList.toggle('armed', lvl > 1); // your next hit counts triple
 }
 
 function renderTurnBanner() {
   const p = curPlayer(); if (!p) { $('#turnMain').textContent = ''; return; }
   let main;
   if (S.over) main = 'Round over';
-  else if (T.busy) main = 'Incoming!';
+  else if (T.busy) main = T.flights[0] && T.flights[0].thrower.local ? 'Your throw!' : 'Incoming!';
   else if (p.local) main = 'Your turn' + (T.phase === 'move' ? ': move' : ': throw');
   else main = p.name + (T.phase === 'move' ? ' is moving…' : ' is aiming…');
-  $('#turnMain').textContent = main;
+  // the turn timer sits in the main banner, and turns red for the last 10 seconds
   const left = Math.max(0, Math.ceil((T.turnDeadline - Date.now()) / 1000));
-  let sub = 'Lobby ' + NET.code + (S.watching ? ' · ' + watchHint() : '');
-  if (!T.busy && !S.over && T.turnDeadline && left <= TURN_LIMIT) sub += ' · ' + left + 's';
-  $('#turnSub').textContent = sub;
+  const timing = !T.busy && !S.over && T.turnDeadline && left <= TURN_LIMIT;
+  if (timing) main += ' · ' + left + 's';
+  $('#turnMain').textContent = main;
+  $('#turnMain').classList.toggle('hurry', !!timing && left <= 10 && p.local);
+  $('#turnSub').textContent = 'Lobby ' + NET.code + (S.watching ? ' · ' + watchHint() : '');
 }
 
 // The opponent closest to where you're aiming (within about 20°), and how far away they are.
@@ -76,7 +79,7 @@ export function updateReadout() {
   if (last) $('#meterLast').style.left = (last.power * 100).toFixed(1) + '%';
   if (canMove()) {
     const d = Math.hypot(T.moveTo.x - p.x, T.moveTo.z - p.z);
-    $('#angleTxt').textContent = 'Walk ' + d.toFixed(1) + ' of ' + MOVE_RADIUS + ' m';
+    $('#angleTxt').textContent = (innerWidth < 520 ? '' : 'Walk ') + d.toFixed(1) + ' of ' + MOVE_RADIUS + ' m';
     const hid = hiddenFromNext(T.moveTo), n = nextPlayer();
     $('#powerTxt').textContent = hid == null ? '' : (hid ? 'Hidden from ' + n.name : n.name + ' can see you');
     $('#throwBtn').innerHTML = d < 0.05 ? 'STAY<br>HERE' : 'MOVE<br>HERE';

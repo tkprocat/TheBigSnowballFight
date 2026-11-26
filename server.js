@@ -10,7 +10,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CHAT_LINES, EMOTES, MAX_PLAYERS, COLORS, BOT_NAMES, BOT_LEVELS, makeMap } from './public/shared/physics.js';
-import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay } from './rooms.js';
+import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay, broadcastEvent } from './rooms.js';
 import turnbased from './modes/turnbased/index.js';
 import realtime from './modes/realtime/index.js';
 
@@ -68,9 +68,19 @@ function removeMember(room, p) {
   if (si >= 0) room.spectators.splice(si, 1);
   const i = room.players.indexOf(p);
   if (i >= 0) room.players.splice(i, 1);
-  if (room.host === p) room.host = humans(room)[0] || null;
+  const wasHost = room.host === p;
+  if (wasHost) room.host = humans(room)[0] || null;
   if (!humans(room).length) { stopRoom(room); rooms.delete(room.code); return; }
   if (i >= 0 && room.started) MODES[room.mode].remove(room, p, i);
+  // tell everyone who left (people only; removing a bot is the host's own doing), and who hosts now
+  if (!p.cpu) broadcastEvent(room, 'notice', { left: p.name, ...(wasHost && room.host ? { host: room.host.id, hostName: room.host.name } : {}) });
+}
+
+// A name nobody else in the room has: "Frosty", then "Frosty 2", "Frosty 3"...
+function uniqueName(room, name) {
+  const taken = new Set(members(room).map((m) => m.name));
+  if (!taken.has(name)) return name;
+  for (let k = 2; ; k++) { const n = Array.from(name).slice(0, 11).join('') + ' ' + k; if (!taken.has(n)) return n; }
 }
 
 function stopRoom(room) { for (const mode of Object.values(MODES)) mode.stop(room); }
@@ -101,7 +111,7 @@ const lobbyActions = {
     const full = room.players.length >= MAX_PLAYERS;
     const member = newMember({
       token: crypto.randomUUID(),
-      name: cleanName(name, `Player ${members(room).length + 1}`), color: pickColor(room, color),
+      name: uniqueName(room, cleanName(name, `Player ${members(room).length + 1}`)), color: pickColor(room, color),
     });
     if (full) room.spectators.push(member);
     else {
@@ -109,6 +119,7 @@ const lobbyActions = {
       if (room.started) MODES[room.mode].join(room, member);
     }
     room.lastActive = Date.now();
+    if (room.host) broadcastEvent(room, 'notice', { joined: member.name, watching: full });
     broadcast(room);
     return { code: room.code, token: member.token, id: member.id };
   },
@@ -144,12 +155,16 @@ const lobbyActions = {
     room.botLevel = level;
   },
 
-  addBot(_body, room, member) {
+  // Add one computer player, or `count` of them (up to 15) while seats last.
+  addBot({ count }, room, member) {
     requireHost(room, member);
     if (room.started) throw new Error('Add computer players before the game starts');
     if (room.players.length >= MAX_PLAYERS) throw new Error('The room is full');
-    const used = new Set(members(room).map((p) => p.name));
-    room.players.push(newMember({ cpu: true, name: BOT_NAMES.find((n) => !used.has(n)) || 'Snowbot', color: pickColor(room) }));
+    const n = Number.isInteger(count) ? Math.max(1, Math.min(count, MAX_PLAYERS - 1)) : 1;
+    for (let i = 0; i < n && room.players.length < MAX_PLAYERS; i++) {
+      const used = new Set(members(room).map((p) => p.name));
+      room.players.push(newMember({ cpu: true, name: uniqueName(room, BOT_NAMES.find((b) => !used.has(b)) || 'Snowbot'), color: pickColor(room) }));
+    }
   },
 
   removeBot({ id }, room, member) {

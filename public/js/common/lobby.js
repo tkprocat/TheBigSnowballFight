@@ -43,8 +43,8 @@ export function showLobby(v) {
   const specs = v.spectators || [];
   $('#watchList').hidden = !specs.length;
   $('#watchList').textContent = specs.length ? 'Watching: ' + specs.map((s) => safeName(s.name) + (s.id === v.host ? ' (host)' : '') + (s.id === v.you ? ' (you)' : '')).join(', ') : '';
-  $('#lobbyBot').hidden = !isHost;
-  $('#lobbyBot').disabled = v.players.length >= MAX_PLAYERS;
+  $('#lobbyBot').hidden = $('#lobbyBot4').hidden = !isHost;
+  $('#lobbyBot').disabled = $('#lobbyBot4').disabled = v.players.length >= MAX_PLAYERS;
   $('#lobbyWatch').textContent = v.watching ? 'Take a seat' : 'Watch instead';
   $('#lobbyStart').hidden = !isHost;
   $('#lobbyStart').disabled = v.players.length < 2;
@@ -57,6 +57,7 @@ export function initLobby(onLeave) {
   for (const b of document.querySelectorAll('.modeBtn'))
     b.onclick = () => api('setMode', { mode: b.dataset.mode }).catch((e) => toast(e.message, '', 1800));
   $('#lobbyBot').onclick = () => api('addBot').catch((e) => toast(e.message, '', 1800));
+  $('#lobbyBot4').onclick = () => api('addBot', { count: 4 }).catch((e) => toast(e.message, '', 1800));
   for (const b of document.querySelectorAll('#botLevelRow button'))
     b.onclick = () => api('setBotLevel', { level: b.dataset.level }).catch((e) => toast(e.message, '', 1800));
   $('#lobbyWatch').onclick = () => api('spectate').catch((e) => toast(e.message, '', 1800));
@@ -64,7 +65,9 @@ export function initLobby(onLeave) {
   $('#lobbyLeave').onclick = onLeave;
   $('#copyLink').onclick = () => {
     const link = inviteLink(NET.code || '');
-    navigator.clipboard.writeText(link).then(() => toast('Invite link copied', '', 1200), () => {
+    // phones: the system share sheet (messages, chat apps); elsewhere, copy the link
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) { navigator.share({ title: 'The Big Snowball Fight', text: 'Join my snowball fight: lobby ' + NET.code, url: link }).catch(() => {}); return; }
+    navigator.clipboard.writeText(link).then(() => toast('Invite link copied', '', 1200, true), () => {
       const r = document.createRange(); r.selectNodeContents($('#lobbyLink')); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
       toast('Link selected, copy it from there', '', 1600);
     });

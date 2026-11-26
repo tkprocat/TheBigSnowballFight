@@ -89,14 +89,22 @@ export function animateAvatar(p, dt, time, o) {
 
 const tmpV = new THREE.Vector3();
 // Name tags and speech bubbles over heads. `hide` is a player whose tag would be in the way (your own, while aiming).
+// Tags fade and shrink with distance and hide past ~40 m, except for the leader and the player the camera is on,
+// and they're kept inside the screen edges, so big games stay readable.
 export function updateTags(hide, label) {
   const w = innerWidth, h = innerHeight;
+  const leader = S.players.reduce((a, b) => (!a || b.score > a.score ? b : a), null), on = followed();
   for (const p of S.players) {
-    tmpV.set(p.avatar.position.x, p.avatar.position.y + 2.45, p.avatar.position.z).project(camera);
-    const vis = S.screen === 'game' && tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1;
+    tmpV.set(p.avatar.position.x, p.avatar.position.y + 2.45, p.avatar.position.z);
+    const d = tmpV.distanceTo(camera.position), keep = p === leader || p === on;
+    tmpV.project(camera);
+    const vis = S.screen === 'game' && tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1 && (d < 42 || keep);
     p.tag.hidden = !vis || p === hide;
     if (vis) {
-      p.tag.style.left = ((tmpV.x + 1) / 2 * w).toFixed(1) + 'px'; p.tag.style.top = ((1 - tmpV.y) / 2 * h).toFixed(1) + 'px';
+      const x = Math.min(w - 60, Math.max(60, (tmpV.x + 1) / 2 * w)), y = Math.max(28, (1 - tmpV.y) / 2 * h);
+      p.tag.style.left = x.toFixed(1) + 'px'; p.tag.style.top = y.toFixed(1) + 'px';
+      const scale = Math.max(0.7, Math.min(1, 1.15 - d / 70)), alpha = keep ? 1 : Math.max(0.35, Math.min(1, 1.6 - d / 30));
+      p.tag.style.transform = 'translate(-50%,-100%) scale(' + scale.toFixed(2) + ')'; p.tag.style.opacity = alpha.toFixed(2);
       const text = label(p);
       if (p.tagName.textContent !== text) p.tagName.textContent = text;
     }
@@ -123,9 +131,10 @@ export function renderScores(o = {}) {
     const d = document.createElement('div'); d.className = 'sc' + (p === o.cur ? ' cur' : '') + (p === o.follow ? ' follow' : '');
     d.dataset.id = p.id;
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = p.color;
-    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (p.local ? ' (you)' : '') + (p.away ? ' (away)' : '');
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (p.away ? ' (away)' : '');
     const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = p.score;
     d.append(dot, nm);
+    if (p.local) { const y = document.createElement('span'); y.className = 'youtag'; y.textContent = 'you'; d.appendChild(y); }
     for (const [cls, text] of (o.tags ? o.tags(p) : [])) { const t = document.createElement('span'); t.className = cls; t.textContent = text; d.appendChild(t); }
     d.append(pts); box.appendChild(d);
   }
