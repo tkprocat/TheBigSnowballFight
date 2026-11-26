@@ -1,0 +1,20 @@
+{
+  "name": "the-big-snowball-fight",
+  "version": "1.0.0",
+  "description": "A turn-based 3D snowball fight in the browser: aim, time your power, mind the wind. Lobbies with codes, bots, and pass-the-device play.",
+  "type": "module",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tkprocat/TheBigSnowballFight.git"
+  },
+  "license": "MIT"
+}
