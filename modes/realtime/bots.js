@@ -1,10 +1,9 @@
 // Realtime computer players. With no snowballs they run to the nearest one. Holding snowballs, they look for
 // someone they can see within range, stop, wind up and throw, then move on for a bit. They move with the same
 // moveStep as people and throw through the same throwBall (ammo and cooldown checks included).
-import { TAU, lineBlocked } from '../../public/shared/physics.js';
+import { TAU, lineBlocked, botLevel } from '../../public/shared/physics.js';
 import { CARRY_MAX, RUN_SPEED, SPRINT_SPEED, moveStep, botAim } from '../../public/shared/realtimeRules.js';
 
-const RANGE = 24;
 
 function nearest(from, list) {
   let best = null, bd = Infinity;
@@ -14,7 +13,7 @@ function nearest(from, list) {
 
 // `game` is the realtime mode's helpers: { throwBall, rand }.
 export function botStep(room, bot, dt, now, game) {
-  const rng = game.rand;
+  const rng = game.rand, level = botLevel(room.botLevel);
   const ai = bot.ai || (bot.ai = { state: 'roam', t: rng() * 0.8, wp: null, target: null, stuck: 0, detour: 0 });
   ai.t -= dt;
   const others = room.players.filter((o) => o !== bot);
@@ -25,7 +24,7 @@ export function botStep(room, bot, dt, now, game) {
     if (!target || bot.ammo <= 0 || now < target.shieldUntil) { ai.state = 'roam'; bot.chargeAt = 0; return; }
     bot.yaw = Math.atan2(target.x - bot.x, target.z - bot.z);
     if (ai.t > 0) return;
-    const plan = botAim(bot, target, room.map, rng, 2.2);
+    const plan = botAim(bot, target, room.map, rng, level.rtError, level.rtFineTune);
     try { game.throwBall(room, bot, (plan.yaw % TAU + TAU) % TAU, plan.pitch, now); } catch { /* out of snowballs or too soon */ }
     bot.chargeAt = 0;
     ai.state = 'roam'; ai.t = 0.8 + rng() * 1.6; ai.wp = null;
@@ -34,10 +33,10 @@ export function botStep(room, bot, dt, now, game) {
 
   // holding a snowball and ready: anyone in sight?
   if (bot.ammo > 0 && now >= bot.coolUntil && ai.t <= 0) {
-    const seen = others.filter((o) => now >= o.shieldUntil && Math.hypot(o.x - bot.x, o.z - bot.z) < RANGE
+    const seen = others.filter((o) => now >= o.shieldUntil && Math.hypot(o.x - bot.x, o.z - bot.z) < level.rtRange
       && !lineBlocked(bot, o, room.map, others.filter((q) => q !== o)));
     const n = nearest(bot, seen);
-    if (n) { ai.state = 'aim'; ai.target = n.o.id; ai.t = 0.5 + rng() * 0.4; bot.chargeAt = now; bot.vx = bot.vz = 0; return; }
+    if (n) { ai.state = 'aim'; ai.target = n.o.id; ai.t = level.rtWindup[0] + rng() * (level.rtWindup[1] - level.rtWindup[0]); bot.chargeAt = now; bot.vx = bot.vz = 0; return; }
   }
 
   // where to go: a snowball if we need one, else somewhere a little way from the nearest opponent

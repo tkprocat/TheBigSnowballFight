@@ -30,6 +30,7 @@ export function viewFor(room, member) {
     watching: !!member && room.spectators.includes(member),
     host: room.host ? room.host.id : null,
     mode: room.mode,
+    botLevel: room.botLevel || 'normal',
     started: room.started,
     over: room.over,
     seed: room.seed,

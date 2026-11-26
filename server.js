@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { CHAT_LINES, EMOTES, MAX_PLAYERS, COLORS, BOT_NAMES, makeMap } from './public/shared/physics.js';
+import { CHAT_LINES, EMOTES, MAX_PLAYERS, COLORS, BOT_NAMES, BOT_LEVELS, makeMap } from './public/shared/physics.js';
 import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay } from './rooms.js';
 import turnbased from './modes/turnbased/index.js';
 import realtime from './modes/realtime/index.js';
@@ -46,7 +46,7 @@ function pickColor(room, wanted) {
 
 function newRoom(code) {
   return {
-    code, mode: 'turn', players: [], spectators: [], host: null, started: false, over: null, seed: 1, round: 0,
+    code, mode: 'turn', botLevel: 'normal', players: [], spectators: [], host: null, started: false, over: null, seed: 1, round: 0,
     cur: 0, turn: 0, phase: 'move', throwN: 0, packN: 0, lastPack: null, lastThrow: null, busyUntil: 0, turnEnds: null,
     clock: null, botTimer: null, rt: null, lastActive: Date.now(),
   };
@@ -134,6 +134,14 @@ const lobbyActions = {
     if (room.started) throw new Error('Pick the mode before the game starts');
     if (!Object.hasOwn(MODES, mode)) throw new Error('Unknown mode');
     room.mode = mode;
+  },
+
+  // How good the computer players are: easy, normal or hard. Lobby only.
+  setBotLevel({ level }, room, member) {
+    requireHost(room, member);
+    if (room.started) throw new Error('Pick the bot level before the game starts');
+    if (!Object.hasOwn(BOT_LEVELS, level)) throw new Error('Unknown bot level');
+    room.botLevel = level;
   },
 
   addBot(_body, room, member) {

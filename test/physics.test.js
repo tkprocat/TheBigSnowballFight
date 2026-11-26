@@ -151,12 +151,12 @@ test('a heavy snowball flies a bit shorter and the wind moves it less', () => {
 });
 
 // ---------- realtime rules (public/shared/realtimeRules.js) ----------
-import { newBall, stepBall, moveStep, canStep, pathClear, botAim, ballSpot, pilesOnMap, pileSize, RUN_SPEED, SPRINT_SPEED, THROW_POWER } from '../public/shared/realtimeRules.js';
+import { newBall, stepBall, moveStep, canStep, pathClear, botAim, ballSpot, pilesOnMap, pileSize, RT_SIM, RT_LAUNCH_Y, RUN_SPEED, SPRINT_SPEED, THROW_POWER } from '../public/shared/realtimeRules.js';
 
 test('a realtime snowball follows exactly the path simulate() draws', () => {
   const map = makeMap(99);
   const from = { x: 2, z: -3 };
-  const sim = simulate(from, 0.7, 0.5, 0.6, CALM, [], map);
+  const sim = simulate(from, 0.7, 0.5, 0.6, CALM, [], map, 1200, null, 1, RT_SIM);
   const b = newBall(1, 'a', from, 0.7, 0.5, 0.6);
   let res = null, guard = 0;
   while (!res && guard++ < 1000) res = stepBall(b, 1 / 30, map, []);
@@ -201,7 +201,7 @@ test('a perfect realtime bot hits a still target at the fixed throw speed; loose
   const me = { x: 0, z: 0 };
   for (const t of [{ x: 0, z: 6 }, { x: 8, z: 9 }, { x: -15, z: 5 }, { x: 4, z: -22 }]) {
     const plan = botAim(me, t, EMPTY, mulberry32(1), 0);
-    const s = simulate(me, plan.yaw, plan.pitch, THROW_POWER, CALM, [{ id: 't', x: t.x, z: t.z }], EMPTY);
+    const s = simulate(me, plan.yaw, plan.pitch, THROW_POWER, CALM, [{ id: 't', x: t.x, z: t.z }], EMPTY, 1200, null, 1, RT_SIM);
     assert.strictEqual(s.hit, 't', `target at ${t.x},${t.z}`);
   }
   const map = makeMap(5), rng = mulberry32(8), balls = [];
@@ -276,4 +276,48 @@ test('running into a wall at an angle slides along it, whatever way the wall is 
     assert.ok(along > 1.5, `slid ${along.toFixed(2)} m along a wall turned ${ry}`);
     assert.ok(standOk(p.x, p.z, map, []));
   }
+});
+
+// ---------- batch 2: realtime head shots, turn-based range, bot levels ----------
+import { speedOf, BOT_LEVELS, botLevel, ballHit } from '../public/shared/physics.js';
+
+test('realtime counts a ball that clips head and body as a body hit; turn-based still says head', () => {
+  const t = [{ id: 'bob', x: 0, z: 0 }];
+  // a point inside both the head and the body sphere
+  assert.strictEqual(ballHit(0.1, 1.5, 0, t).part, 'head', 'turn-based: head first');
+  assert.strictEqual(ballHit(0.1, 1.5, 0, t, true).part, 'body', 'realtime: body first');
+  assert.strictEqual(ballHit(0, 2.0, 0, t, true).part, 'head', 'a clean head hit is still a head hit');
+  assert.ok(RT_LAUNCH_Y < 1.75, 'realtime throws leave the hand lower');
+  const s = simulate({ x: 0, z: 0 }, 0, 0.3, 0.5, CALM, [], EMPTY, 1200, null, 1, RT_SIM);
+  assert.ok(Math.abs(s.pts[1] - RT_LAUNCH_Y) < 0.1, 'simulate starts realtime throws at the realtime height');
+});
+
+test('turn-based: everyone spawns within reach, and the power meter adds distance evenly', () => {
+  for (let seed = 1; seed <= 60; seed++) {
+    const m = makeMap(seed), rng = mulberry32(seed), pl = [];
+    for (let i = 0; i < 6; i++) pl.push(spawnPoint(rng, m, pl));
+    for (const a of pl) for (const b of pl) assert.ok(Math.hypot(a.x - b.x, a.z - b.z) <= 34.5, 'within full-power range');
+  }
+  const range = (pw) => { let b = 0; for (let p = 0.1; p < 1.2; p += 0.02) b = Math.max(b, simulate({ x: 0, z: 0 }, 0, p, pw, CALM, [], EMPTY).end.z); return b; };
+  const r25 = range(0.25), r50 = range(0.5), r75 = range(0.75), r100 = range(1);
+  assert.ok(r50 - r25 > 8 && r75 - r50 > 8 && r100 - r75 > 8, `each quarter of the meter adds real distance (${[r25, r50, r75, r100].map((r) => r.toFixed(0)).join(' / ')} m)`);
+  assert.ok(Math.abs(speedOf(0) - 7) < 1e-9 && Math.abs(speedOf(1) - 25) < 1e-9, 'same slowest and fastest throw as before');
+  assert.ok(Math.abs(speedOf(THROW_POWER) - 20) < 1e-9, 'realtime throws stay at 20 m/s');
+});
+
+test('bot levels: easy misses more than normal, normal more than hard (turn-based)', () => {
+  const rate = (lv) => {
+    let hits = 0;
+    for (let seed = 1; seed <= 150; seed++) {
+      const map = makeMap(seed), rng = mulberry32(seed * 7 + 1);
+      const me = spawnPoint(rng, map, []), o = spawnPoint(rng, map, [me]);
+      const tgt = { id: 'a', x: o.x, z: o.z }, wind = windFor(seed, seed % 9);
+      const plan = planThrow(me, [tgt], wind, map, rng, lv.turnError);
+      if (simulate(me, plan.yaw, plan.pitch, plan.power, wind, [tgt], map).hit) hits++;
+    }
+    return hits;
+  };
+  const easy = rate(BOT_LEVELS.easy), normal = rate(BOT_LEVELS.normal), hard = rate(BOT_LEVELS.hard);
+  assert.ok(easy < normal && normal < hard, `hits: easy ${easy}, normal ${normal}, hard ${hard} of 150`);
+  assert.strictEqual(botLevel('nonsense'), BOT_LEVELS.normal);
 });

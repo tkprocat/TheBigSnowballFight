@@ -86,3 +86,16 @@ test('a realtime view carries the loose snowballs and ammo; no tokens anywhere',
   assert.ok(!JSON.stringify(v).includes(host.token));
   stop(room);
 });
+
+test('the host picks the bot level in the lobby; everyone sees it', () => {
+  const { host, others, room } = lobby(2);
+  assert.strictEqual(viewFor(room, room.players[1]).botLevel, 'normal');
+  assert.throws(() => act('setBotLevel', host.code, others[0].token, { level: 'hard' }), /Only the host/);
+  assert.throws(() => act('setBotLevel', host.code, host.token, { level: 'godlike' }), /Unknown bot level/);
+  assert.throws(() => act('setBotLevel', host.code, host.token, { level: '__proto__' }), /Unknown bot level/);
+  act('setBotLevel', host.code, host.token, { level: 'easy' });
+  assert.strictEqual(viewFor(room, room.players[1]).botLevel, 'easy');
+  act('start', host.code, host.token);
+  assert.throws(() => act('setBotLevel', host.code, host.token, { level: 'hard' }), /before the game starts/);
+  stop(room);
+});
