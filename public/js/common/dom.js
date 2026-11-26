@@ -8,6 +8,8 @@ export function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); 
 
 let toastTimer = null;
 // `small`: a quieter toast higher up, for chat lines and notices.
+export function clearToast() { clearTimeout(toastTimer); $('#toast').classList.remove('show'); }
+
 export function toast(main, sub = '', ms = 1600, small = false) {
   const t = $('#toast'); t.textContent = main; t.classList.toggle('small', small);
   if (sub) { const s = document.createElement('small'); s.textContent = sub; t.appendChild(s); }

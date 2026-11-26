@@ -89,7 +89,7 @@ export function updateReadout() {
     const facing = p && p.local ? facingOpponent(p, T.aimYaw) : null;
     $('#angleTxt').textContent = 'Angle ' + Math.round(showPitch * 180 / Math.PI) + '°' + (facing ? ' · ' + facing.p.name + ' ' + Math.round(facing.d) + ' m' : '');
     $('#powerTxt').textContent = 'Power ' + Math.round(T.power * 100) + '%' + (last && !T.charging ? ' (last ' + Math.round(last.power * 100) + '%)' : '');
-    if ($('#throwBtn').textContent !== 'HOLDTO THROW') $('#throwBtn').innerHTML = 'HOLD<br>TO THROW';
+    if ($('#throwBtn').textContent !== 'HOLDTO THROW') { $('#throwBtn').innerHTML = 'HOLD<br>TO THROW'; $('#throwBtn').setAttribute('aria-label', 'Hold to charge, release to throw'); }
     $('#meter').style.visibility = '';
   }
 }

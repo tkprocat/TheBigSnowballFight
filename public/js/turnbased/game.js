@@ -101,7 +101,7 @@ initInput({ startCharge, releaseCharge, cancelCharge, nextTarget, packNow });
 /* ---------- flights ---------- */
 function startFlight(thrower, sim, hitId, part, onDone, heavy = 1) {
   const flightT = (sim.n - 1) * DT;
-  T.flights.push({ thrower, sim, hitId, part: hitId ? part : null, heavy, onDone, t: 0, phase: 'fly', hold: 0, slowFrom: part === 'head' && hitId ? Math.max(0, flightT - SLOW_WINDOW) : Infinity });
+  T.flights.push({ thrower, sim, hitId, part: hitId ? part : null, heavy, onDone, t: 0, windup: THROW_DURATION - THROW_RELEASE_LEFT, phase: 'fly', hold: 0, slowFrom: part === 'head' && hitId ? Math.max(0, flightT - SLOW_WINDOW) : Infinity });
   T.busy = true;
   thrower.armT = THROW_DURATION;
   sfx.throw();
@@ -111,7 +111,8 @@ function updateFlights(dt) {
   const f = T.flights[0];
   if (!f) { ball.visible = false; return; }
   if (f.phase === 'fly') {
-    if (f.thrower.armT > THROW_RELEASE_LEFT) { ball.visible = false; return; }
+    // the ball leaves the hand at the release point; the flight keeps its own clock, so a thrower who left can't stall it
+    if (f.windup > 0) { f.windup -= dt; ball.visible = false; return; }
     // critical-hit camera: the last stretch of a head shot plays slowed down
     const slow = f.t >= f.slowFrom;
     f.t += dt * (slow ? SLOW_SPEED : 1);

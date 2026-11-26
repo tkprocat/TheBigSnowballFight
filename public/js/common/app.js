@@ -126,7 +126,10 @@ $('#resumeBtn').onclick = closeGameMenu;
 $('#leaveBtn').onclick = () => { closeGameMenu(); showMenu(); };
 $('#gameMenu').addEventListener('click', (e) => { if (e.target.id === 'gameMenu') closeGameMenu(); });
 $('#overMenuBtn').onclick = showMenu;
-$('#againBtn').onclick = () => api('again').catch((e) => toast(e.message, '', 1800));
+$('#againBtn').onclick = () => {
+  if (active && active.lockNow) active.lockNow(); // realtime: grab the mouse while this click counts as a gesture
+  api('again').catch((e) => toast(e.message, '', 1800));
+};
 $('#muteBtn').onclick = () => { $('#muteBtn').textContent = toggleMute() ? '🔇' : '🔊'; };
 $('#muteBtn').textContent = isMuted() ? '🔇' : '🔊';
 

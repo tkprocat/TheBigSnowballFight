@@ -13,7 +13,7 @@ export const R = {
 };
 
 export function resetR() {
-  Object.assign(R, { vel: { x: 0, z: 0 }, sprinting: false, keys: { f: 0, b: 0, l: 0, r: 0, sprint: 0 }, stick: { x: 0, y: 0 }, fixSeen: null, snaps: [], lastInput: 0, inputBusy: false });
+  Object.assign(R, { goUntil: 0, lastCount: null, splatUntil: 0, vel: { x: 0, z: 0 }, sprinting: false, keys: { f: 0, b: 0, l: 0, r: 0, sprint: 0 }, stick: { x: 0, y: 0 }, fixSeen: null, snaps: [], lastInput: 0, inputBusy: false });
 }
 
 export const me = () => S.players.find((p) => p.local) || null;

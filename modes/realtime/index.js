@@ -4,7 +4,7 @@
 // where they are (checked for speed and walls) and ask to throw; they only draw what the server sends back.
 import { TAU, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, clamp } from '../../public/shared/physics.js';
 import {
-  RUN_SPEED, SPRINT_SPEED, TICK_MS, SEND_MS, CARRY_MAX, PICKUP_R, BALL_RESPAWN_MS, THROW_COOLDOWN_MS, THROW_POWER, SHIELD_MS,
+  RUN_SPEED, SPRINT_SPEED, TICK_MS, SEND_MS, CARRY_MAX, PICKUP_R, BALL_RESPAWN_MS, THROW_COOLDOWN_MS, THROW_POWER, SHIELD_MS, START_COUNTDOWN_MS,
   pilesOnMap, pileSize, pathClear, ballSpot, newBall, stepBall,
 } from '../../public/shared/realtimeRules.js';
 import { rand, place, broadcast, broadcastEvent, broadcastSay, humanWatching } from '../../rooms.js';
@@ -36,6 +36,7 @@ function startRound(room) {
   freshState(room);
   for (const p of room.players) resetPlayer(p, now);
   for (let i = pilesOnMap(room.players.length, room.map); i > 0; i--) addBall(room);
+  room.rt.goAt = now + START_COUNTDOWN_MS; // nobody picks up or throws, and bots wait, until the countdown ends
   ensureTick(room);
 }
 
@@ -64,6 +65,12 @@ export function tick(room, now) {
   if (!rt || !room.started || room.over) return;
   const dt = clamp((now - rt.last) / 1000, 0, 0.1);
   rt.last = now;
+
+  // the countdown at the start of a round: people can move into position; nothing else happens yet
+  if (now < (rt.goAt || 0)) {
+    if (now - rt.lastSend >= SEND_MS - 1) sendState(room, now);
+    return;
+  }
 
   rt.plansLeft = PLANS_PER_TICK;
   for (const p of room.players) if (p.cpu) botStep(room, p, dt, now, game);
@@ -126,6 +133,7 @@ export function snapshot(room, now = clock.now()) {
       now < p.shieldUntil ? 1 : 0, p.chargeAt ? 1 : 0]),
     b: rt.balls.map((b) => [b.id, b.x, b.z, b.n || 1]),
     e: rt.events,
+    go: Math.max(0, (rt.goAt || 0) - now), // ms left of the start countdown
   };
 }
 
@@ -217,6 +225,7 @@ export default {
       requirePlaying(room);
       if (![yaw, pitch].every(isNum)) throw new Error('Bad throw');
       if (member.sprinting) throw new Error("Can't throw while sprinting");
+      if (clock.now() < (room.rt.goAt || 0)) throw new Error('Wait for GO!');
       throwBall(room, member, toYaw(yaw), toPitch(pitch), clock.now());
       return 'quiet';
     },

@@ -1,6 +1,6 @@
 // The round-over popup, shared by both modes.
 import { S } from './state.js';
-import { $ } from './dom.js';
+import { $, clearToast } from './dom.js';
 import { NET } from './net.js';
 import { sfx } from './audio.js';
 
@@ -15,4 +15,5 @@ export function showOver(winner) {
   $('#over').hidden = false;
 }
 
-export function hideOver() { S.over = false; $('#over').hidden = true; }
+// A new round: hide the popup and any message left over from the last round.
+export function hideOver() { S.over = false; $('#over').hidden = true; clearToast(); }

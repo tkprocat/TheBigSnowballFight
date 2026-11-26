@@ -17,6 +17,7 @@ export const PILES_MAX = 64;           // spots on the map that hold snowballs
 export const BALL_RESPAWN_MS = 2000;   // a picked-up snowball comes back somewhere else after this
 export const THROW_COOLDOWN_MS = 450;
 export const THROW_POWER = 0.609375;   // every throw goes at the same speed (20 m/s, see speedOf); the angle sets the distance (about 38 m at most)
+export const START_COUNTDOWN_MS = 3000; // each round starts with 3, 2, 1, GO: move into position, no pickups or throws
 export const SHIELD_MS = 1500;         // after being hit you can't be hit again for this long
 export const MAX_FLIGHT_STEPS = 1200;
 export const CALM = Object.freeze({ x: 0, z: 0 });

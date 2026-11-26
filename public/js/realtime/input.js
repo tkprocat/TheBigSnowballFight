@@ -12,6 +12,21 @@ const KEYS = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', Ar
 export const locked = () => document.pointerLockElement === canvas;
 export function unlock() { if (locked()) document.exitPointerLock(); }
 
+// Ask for the mouse lock. The canvas gets focus first (a request from an unfocused page can fail with
+// "WrongDocumentError"), and a refused request is caught: after a failure, mouse play falls back to dragging to aim
+// and clicking to throw, and the next click tries the lock again.
+export let lockFailed = false;
+const fine = matchMedia('(hover:hover) and (pointer:fine)');
+export function requestLock() {
+  // only a seated player in a realtime game: spectators (a watching host too) keep their cursor for names and menus
+  if (!fine.matches || locked() || S.watching || S.mode !== 'realtime' || !S.players.some((p) => p.local)) return;
+  try { window.focus(); canvas.focus({ preventScroll: true }); } catch {}
+  const fail = () => { lockFailed = true; };
+  try { const r = canvas.requestPointerLock(); if (r && typeof r.catch === 'function') r.catch(fail); } catch { fail(); }
+}
+document.addEventListener('pointerlockerror', () => { lockFailed = true; });
+document.addEventListener('pointerlockchange', () => { if (locked()) lockFailed = false; });
+
 function turn(dx, dy, k) {
   R.yaw -= dx * k;
   if (!R.sprinting) R.pitch = clamp(R.pitch - dy * k * 0.8, PITCH_MIN, PITCH_MAX); // sprinting: steer only, no aiming
@@ -35,8 +50,11 @@ export function initInput(act) {
   canvas.addEventListener('pointerdown', (e) => {
     if (!on() || !canPlay()) return;
     if (e.pointerType === 'mouse') {
-      if (!locked()) { canvas.requestPointerLock(); return; }
-      if (e.button === 0) act.throwNow();
+      if (locked()) { if (e.button === 0) act.throwNow(); return; }
+      requestLock();
+      // no lock (yet): drag to aim; a click that doesn't drag throws once the lock has failed before
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, mouse: true };
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* a lock request in progress can refuse capture */ }
       return;
     }
     // touch: drag to aim
@@ -50,7 +68,10 @@ export function initInput(act) {
   });
   canvas.addEventListener('pointerup', (e) => {
     if (!on()) return;
-    if (drag && e.pointerId === drag.id) drag = null;
+    if (drag && e.pointerId === drag.id) {
+      if (drag.mouse && lockFailed && !locked() && e.button === 0 && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 6) act.throwNow();
+      drag = null;
+    }
   });
   canvas.addEventListener('pointercancel', () => { drag = null; });
 
