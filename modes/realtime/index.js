@@ -8,7 +8,7 @@ import {
   pilesOnMap, pileSize, pathClear, ballSpot, newBall, stepBall,
 } from '../../public/shared/realtimeRules.js';
 import { rand, place, broadcast, broadcastEvent, broadcastSay, humanWatching } from '../../rooms.js';
-import { botStep } from './bots.js';
+import { botStep, PLANS_PER_TICK } from './bots.js';
 
 // The server's clock; tests swap it for a fake one.
 export const clock = { now: () => Date.now() };
@@ -72,6 +72,7 @@ export function tick(room, now) {
     return;
   }
 
+  rt.plansLeft = PLANS_PER_TICK;
   for (const p of room.players) if (p.cpu) botStep(room, p, dt, now, game);
 
   // pick up snowballs you walk over: as many from the pile as you can carry; the rest stay for someone else
