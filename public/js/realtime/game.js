@@ -9,6 +9,7 @@ import { api } from '../common/net.js';
 import { audio, sfx } from '../common/audio.js';
 import { THREE, scene, puff, preview, ring, marker, markerMat, easeCamera, fadeBlockingTrees, updateParticles, showPreview, makeBallMesh, removeMesh } from '../common/scene.js';
 import { addPlayer, removePlayer, animateAvatar, updateTags, followed } from '../common/players.js';
+import { THROW_DURATION, THROW_RELEASE_LEFT } from '../common/avatarAnimation.js';
 import { showOver, hideOver } from '../common/over.js';
 import { addFeed, clearFeed } from '../common/feed.js';
 import { R, resetR, me, canPlay } from './state.js';
@@ -28,7 +29,7 @@ function throwNow() {
   if (now < nextThrow) return;
   nextThrow = now + THROW_COOLDOWN_MS + 60; // a little slack, so the server never finds it too soon
   audio();
-  p.armT = 0.35;
+  p.armT = THROW_DURATION;
   sendInput(true).then(() => api('throw', { yaw: R.yaw, pitch: R.pitch })).catch((e) => toast(e.message, '', 1000));
 }
 
@@ -86,7 +87,7 @@ function startFlight(e) {
   const sim = simulate({ x: num(e.x), z: num(e.z) }, num(e.yaw), clamp(num(e.pitch), PITCH_MIN, PITCH_MAX), clamp(num(e.power), 0, 1), CALM, [], S.map, 1200, null, 1, RT_SIM);
   const mesh = makeBallMesh(1); mesh.visible = false;
   R.flights.set(e.n, { sim, t: 0, mesh, thrower, end: null, wait: 0 });
-  if (thrower) { if (!thrower.local) thrower.armT = 0.35; thrower.yaw = num(e.yaw, thrower.yaw); }
+  if (thrower) { if (!thrower.local) thrower.armT = THROW_DURATION; thrower.yaw = num(e.yaw, thrower.yaw); }
   sfx.throw();
 }
 
@@ -107,7 +108,7 @@ function land(f) {
 
 function updateFlights(dt) {
   for (const [n, f] of R.flights) {
-    if (f.thrower && f.thrower.armT > 0.25) { f.mesh.visible = false; continue; } // still winding up
+    if (f.thrower && f.thrower.armT > THROW_RELEASE_LEFT) { f.mesh.visible = false; continue; } // still winding up
     f.t += dt;
     const last = f.end ? clamp(Math.floor(num(f.end.steps)), 1, f.sim.n - 1) : f.sim.n - 1;
     const i = Math.min(last, Math.floor(f.t / DT));
@@ -176,10 +177,12 @@ function updateAvatars(dt, time) {
   for (const p of S.players) {
     const a = p.avatar;
     if (!p.init) { a.position.set(p.x, 0, p.z); p.init = true; }
-    const moved = Math.hypot(p.x - a.position.x, p.z - a.position.z);
+    const dx = p.x - a.position.x, dz = p.z - a.position.z, moved = Math.hypot(dx, dz);
+    const moving = dt > 0 && moved < 2;
     a.position.set(p.x, 0, p.z);
     animateAvatar(p, dt, time, {
-      speed: dt > 0 && moved < 2 ? moved / dt : 0,
+      speed: moving ? moved / dt : 0,
+      vx: moving ? dx / dt : 0, vz: moving ? dz / dt : 0,
       yaw: p.local ? R.yaw : p.yaw,
       arm: p.charging ? 2.0 : null, // bots wind up before they throw
       hasBall: p.ammo > 0 || p.armT > 0,

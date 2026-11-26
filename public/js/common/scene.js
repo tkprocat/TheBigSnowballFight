@@ -230,8 +230,15 @@ function makeAvatar(color) {
   const hatMat = new THREE.MeshStandardMaterial({ color: c.clone().multiplyScalar(0.7), roughness: 0.8 });
   const scarfMat = new THREE.MeshStandardMaterial({ color: c.getHSL({}).l > 0.5 ? 0x14233d : 0xfff3d6, roughness: 0.8 });
   const body = new THREE.Group(); g.add(body);
-  const legs = []; // each leg hangs from a hip pivot, so it can swing when walking
-  for (const sx of [-0.14, 0.14]) { const hip = new THREE.Group(); hip.position.set(sx, 0.62, 0); body.add(hip); legs.push(hip); const l = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, 0.62, 10), MAT.dark); l.position.y = -0.31; hip.add(l); const b = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), MAT.dark); b.scale.set(1, 0.6, 1.4); b.position.set(0, -0.56, 0.05); hip.add(b); }
+  const legs = [], knees = [], boots = [];
+  for (const sx of [-0.14, 0.14]) {
+    const hip = new THREE.Group(); hip.position.set(sx, 0.62, 0); body.add(hip); legs.push(hip);
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.115, 0.3, 10), MAT.dark); thigh.position.y = -0.15; hip.add(thigh);
+    const knee = new THREE.Group(); knee.position.y = -0.3; hip.add(knee); knees.push(knee);
+    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.13, 0.26, 10), MAT.dark); shin.position.y = -0.13; knee.add(shin);
+    const boot = new THREE.Group(); boot.position.y = -0.26; knee.add(boot); boots.push(boot);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), MAT.dark); b.scale.set(1, 0.6, 1.4); b.position.z = 0.05; boot.add(b);
+  }
   const torso = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 14), jacket); torso.scale.set(1, 1.2, 0.88); torso.position.y = 1.0; body.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), MAT.skin); head.position.y = 1.72; body.add(head);
   for (const sx of [-0.1, 0.1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), MAT.black); e.position.set(sx, 1.76, 0.27); body.add(e); }
@@ -242,18 +249,25 @@ function makeAvatar(color) {
   const pom = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), MAT.snow); pom.position.y = 0.33; hatGroup.add(pom);
   const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 8, 20), scarfMat); scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.46; body.add(scarf);
   const tail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.4, 0.06), scarfMat); tail.position.set(0.15, 1.25, 0.3); tail.rotation.z = 0.2; body.add(tail);
-  const arms = [];
+  const arms = [], elbows = [];
   for (const sx of [-1, 1]) {
     const pivot = new THREE.Group(); pivot.position.set(0.4 * sx, 1.28, 0);
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.55, 8), jacket); arm.position.y = -0.27; pivot.add(arm);
-    const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), hatMat); mitt.position.y = -0.56; pivot.add(mitt);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.095, 0.28, 8), jacket); arm.position.y = -0.14; pivot.add(arm);
+    const elbow = new THREE.Group(); elbow.position.y = -0.28; pivot.add(elbow); elbows.push(elbow);
+    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.1, 0.25, 8), jacket); forearm.position.y = -0.125; elbow.add(forearm);
+    const mitt = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), hatMat); mitt.position.y = -0.28; elbow.add(mitt);
     pivot.rotation.z = 0.25 * sx;
     body.add(pivot); arms.push(pivot);
   }
-  const handBall = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 10, 8), MAT.snow); handBall.position.y = -0.62; arms[0].add(handBall);
+  const handBall = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 10, 8), MAT.snow); handBall.position.y = -0.34; elbows[0].add(handBall);
   const splat = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), MAT.snow); splat.scale.set(1, 1, 0.4); splat.position.set(0, 1.1, 0.38); splat.visible = false; body.add(splat);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  g.userData = { body, throwArm: arms[0], freeArm: arms[1], legs, handBall, splat, hat: hatGroup };
+  // Twist at the waist without dragging the feet around; keep existing part coordinates for hit/emote effects.
+  const upper = new THREE.Group(), upperParts = new THREE.Group();
+  upper.position.y = 0.9; upperParts.position.y = -0.9; upper.add(upperParts);
+  for (const part of [...body.children]) if (!legs.includes(part)) upperParts.add(part);
+  body.add(upper);
+  g.userData = { body, upper, throwArm: arms[0], freeArm: arms[1], elbows, legs, knees, boots, handBall, splat, hat: hatGroup };
   scene.add(g);
   return g;
 }

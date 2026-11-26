@@ -2,7 +2,7 @@
 // (same inputs, same physics, cut at the server's step count) and shows the result.
 import {
   clamp, angDiff, DT, PITCH_MIN, PITCH_MAX, HIT_POINTS, HEAVY_MAX, PACK_MS, SLOW_WINDOW, SLOW_SPEED, HOLD_MS,
-  simulate, windFor, clampMove, standOk,
+  simulate, windFor, clampMove, standOk, MOVE_RADIUS,
 } from '../../shared/physics.js';
 import { S } from '../common/state.js';
 import { $, num, safeName, safeColor, toast } from '../common/dom.js';
@@ -12,6 +12,7 @@ import {
   THREE, camera, puff, ball, preview, ring, moveRing, moveFill, marker, markerMat, easeCamera, updateParticles, showPreview, fadeBlockingTrees,
 } from '../common/scene.js';
 import { addPlayer, removePlayer, animateAvatar, updateTags, followed } from '../common/players.js';
+import { THROW_DURATION, THROW_RELEASE_LEFT } from '../common/avatarAnimation.js';
 import { showOver, hideOver } from '../common/over.js';
 import { T, resetT, curPlayer, currentWind, canControl, canMove, hiddenFromNext } from './state.js';
 import { renderHUD, refreshControls, updateReadout } from './hud.js';
@@ -102,7 +103,7 @@ function startFlight(thrower, sim, hitId, part, onDone, heavy = 1) {
   const flightT = (sim.n - 1) * DT;
   T.flights.push({ thrower, sim, hitId, part: hitId ? part : null, heavy, onDone, t: 0, phase: 'fly', hold: 0, slowFrom: part === 'head' && hitId ? Math.max(0, flightT - SLOW_WINDOW) : Infinity });
   T.busy = true;
-  thrower.armT = 0.35;
+  thrower.armT = THROW_DURATION;
   sfx.throw();
 }
 
@@ -110,7 +111,7 @@ function updateFlights(dt) {
   const f = T.flights[0];
   if (!f) { ball.visible = false; return; }
   if (f.phase === 'fly') {
-    if (f.thrower.armT > 0.25) { f.t += dt; ball.visible = false; return; }
+    if (f.thrower.armT > THROW_RELEASE_LEFT) { ball.visible = false; return; }
     // critical-hit camera: the last stretch of a head shot plays slowed down
     const slow = f.t >= f.slowFrom;
     f.t += dt * (slow ? SLOW_SPEED : 1);
@@ -267,14 +268,18 @@ function updateAvatars(dt, time) {
   for (const p of S.players) {
     const a = p.avatar;
     if (!p.init) { a.position.set(p.x, 0, p.z); p.init = true; }
+    // A distant hit respawn is a relocation, not a walk across the arena during the next turn.
+    if (Math.hypot(p.x - a.position.x, p.z - a.position.z) > MOVE_RADIUS + 0.5) a.position.set(p.x, 0, p.z);
     const dx = p.x - a.position.x, dz = p.z - a.position.z, dist = Math.hypot(dx, dz);
-    if (dist > 0.01) {
-      const k = Math.min(1, dt * 4);
-      a.position.x += dx * k; a.position.z += dz * k;
-      a.position.y = Math.min(1.5, dist * 0.3) * Math.abs(Math.sin(time * 10)); // hop while moving
-    } else a.position.y = 0;
+    const step = Math.min(dist, dt * 4.5);
+    const vx = dist > 0.01 && dt > 0 ? dx / dist * step / dt : 0;
+    const vz = dist > 0.01 && dt > 0 ? dz / dist * step / dt : 0;
+    if (dist > 0.01) { a.position.x += dx / dist * step; a.position.z += dz / dist * step; }
+    else { a.position.x = p.x; a.position.z = p.z; }
+    a.position.y = 0;
     animateAvatar(p, dt, time, {
       yaw: (p === cp && p.local) ? T.aimYaw : p.yaw,
+      speed: Math.hypot(vx, vz), vx, vz,
       arm: p === cp && T.charging ? 0.5 + T.power * 2.2 : null,
     });
   }
