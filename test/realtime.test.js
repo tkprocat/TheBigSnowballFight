@@ -278,6 +278,7 @@ test('bots in a fort map keep moving: little time stuck, and a game still finish
   act('setMode', host.code, host.token, { mode: 'realtime' });
   act('start', host.code, host.token);
   const room = rooms.get(host.code);
+  room.rt.goAt = 0; // skip the start countdown: bots standing still for it isn't being stuck
   const last = new Map();
   let windows = 0, stuckN = 0;
   for (let i = 0; i < 30 * 120 && !room.over; i++) {
