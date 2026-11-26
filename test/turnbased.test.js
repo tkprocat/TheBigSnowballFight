@@ -244,3 +244,43 @@ test('turn-based timed rounds end on the first throw after the clock, or go to s
   act('throw', host.code, b.token, { yaw: Math.PI, pitch: 0.5, power: 0.1 });
   assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
 });
+
+test('turn-based: when the clock runs out the scores at that moment decide it; later throws and packs are refused', () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const [a, b] = room.players;
+  room.map = { walls: [], trees: [], deco: [] };
+  a.x = 0; a.z = 0; b.x = 0; b.z = 3;
+  a.score = 4; b.score = 5; // a is behind when time runs out
+  room.endsAt = Date.now() - 1;
+  room.cur = 0; room.busyUntil = 0; room.phase = 'aim';
+  assert.throws(() => act('throw', host.code, a.token, { yaw: 0, pitch: 0.3, power: 0.3 }), /Time's up/);
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' }, 'the leader at the deadline wins');
+  assert.strictEqual(a.score, 4, 'a throw after the deadline never scores');
+  // packing after the deadline is refused too
+  const p2 = lobby(2);
+  act('setWin', p2.host.code, p2.host.token, { type: 'time', minutes: 3 });
+  act('start', p2.host.code, p2.host.token);
+  p2.room.players[1].score = 1;
+  p2.room.endsAt = Date.now() - 1;
+  p2.room.cur = 0; p2.room.busyUntil = 0;
+  assert.throws(() => act('pack', p2.host.code, p2.host.token), /Time's up/);
+  assert.strictEqual(p2.room.over.reason, 'time');
+  clearTimeout(p2.room.endTimer); clearTimeout(p2.room.clock);
+});
+
+test('turn-based: a timed round ends right at the deadline, without waiting for a throw', async () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const turnbased = (await import('../modes/turnbased/index.js')).default;
+  const [a, b] = room.players;
+  a.score = 2; b.score = 3;
+  room.endsAt = Date.now() + 250; // pretend the clock is about to run out
+  turnbased.clockStarted(room);
+  assert.strictEqual(room.over, null);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.strictEqual(room.turnEnds, null, 'no turn running after the round ended');
+});

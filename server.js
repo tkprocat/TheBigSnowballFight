@@ -94,6 +94,7 @@ function startClock(room) {
   room.endsAt = room.win && room.win.type === 'time'
     ? (room.mode === 'realtime' && room.rt && room.rt.goAt ? room.rt.goAt : Date.now()) + room.win.minutes * 60000
     : null;
+  if (MODES[room.mode].clockStarted) MODES[room.mode].clockStarted(room);
 }
 
 // Fresh scores and spots for a new round.

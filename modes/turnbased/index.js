@@ -18,10 +18,38 @@ function clearTimers(room) {
   room.clock = room.botTimer = null;
 }
 
+// A timed round ends on the scores when the clock runs out: one leader wins; a tie is sudden death (the next throw
+// that leaves one player leading alone wins). Called by a timer at the deadline and before any throw or pack, so
+// nothing done after time is up can change the result. Returns true if the round is over.
+export function resolveClock(room) {
+  if (room.over) return true;
+  if (!room.endsAt || room.suddenDeath || Date.now() < room.endsAt) return false;
+  const result = checkWinner(room.players, room.win, room.endsAt, Date.now());
+  if (result && result.winner) {
+    room.over = { winner: result.winner.id, reason: 'time' };
+    clearTimers(room); clearTimeout(room.endTimer); room.turnEnds = null;
+    return true;
+  }
+  if (result && result.suddenDeath) room.suddenDeath = true;
+  return false;
+}
+
+// Called when a round's clock starts: end the round right at the deadline, not at the next throw.
+function scheduleEnd(room) {
+  clearTimeout(room.endTimer); room.endTimer = null;
+  if (!room.endsAt) return;
+  room.endTimer = later(Math.max(0, room.endsAt - Date.now()) + 10, `Round clock in room ${room.code}`, () => {
+    if (!room.started || room.over) return;
+    const wasSudden = room.suddenDeath;
+    if (resolveClock(room) || room.suddenDeath !== wasSudden) broadcast(room);
+  });
+}
+
 function startTurn(room) {
   clearTimers(room);
   room.turnEnds = null;
   if (!room.started || room.over || !room.players.length) return;
+  if (resolveClock(room)) return; // time ran out: no new turn
   const p = curPlayer(room);
   room.phase = 'move';
   const wait = Math.max(0, room.busyUntil - Date.now());
@@ -36,6 +64,7 @@ function startTurn(room) {
 
 // Throw a snowball for player p. Decides the result, scores it, moves a hit player, and moves on to the next turn.
 function doThrow(room, p, yaw, pitch, power) {
+  if (resolveClock(room)) return; // time ran out before this throw (e.g. the turn timer's throw): it doesn't count
   const wind = windFor(room.seed, room.turn);
   const targets = room.players.filter((o) => o !== p).map((o) => ({ id: o.id, x: o.x, z: o.z }));
   const heavy = p.heavy || 1;
@@ -56,11 +85,13 @@ function doThrow(room, p, yaw, pitch, power) {
     if (victim.cpu && rand() < 0.5) broadcastSay(room, victim, { line: 3 });
   }
   room.lastActive = Date.now();
-  // first to N points, or (checked after every throw) the clock: a shared lead when time runs out is sudden death
-  const result = checkWinner(room.players, room.win, room.endsAt, Date.now());
-  if (result && result.suddenDeath) room.suddenDeath = true;
+  // points: first to the target. Timed: only sudden death is decided by a throw (the clock itself is resolveClock's)
+  const result = room.win && room.win.type === 'time'
+    ? (room.suddenDeath ? checkWinner(room.players, room.win, room.endsAt, Infinity) : null)
+    : checkWinner(room.players, room.win, room.endsAt, Date.now());
   if (result && result.winner) {
     room.over = { winner: result.winner.id, reason: result.reason };
+    clearTimeout(room.endTimer);
     clearTimers(room); room.turnEnds = null;
     return;
   }
@@ -75,6 +106,7 @@ function nextTurn(room) {
 
 // Spend the turn packing a heavy snowball: your next hit counts triple.
 function doPack(room, p) {
+  if (resolveClock(room)) throw new Error("Time's up!");
   if ((p.heavy || 1) > 1) throw new Error('You already have a heavy snowball. Throw it first');
   p.heavy = HEAVY_MULT;
   room.lastPack = { n: ++room.packN, by: p.id, heavy: p.heavy };
@@ -91,6 +123,7 @@ function toPitch(v) { return typeof v === 'number' && Number.isFinite(v) ? clamp
 function requireTurn(room, member) {
   if (!room.started) throw new Error('The game has not started');
   if (room.over) throw new Error('The round is over');
+  if (resolveClock(room)) throw new Error("Time's up!"); // the clock ran out just now: the scores at that moment decide it
   if (curPlayer(room) !== member) throw new Error('It is not your turn');
 }
 
@@ -115,7 +148,10 @@ export default {
     startTurn(room);
   },
 
-  stop: clearTimers,
+  stop(room) { clearTimers(room); clearTimeout(room.endTimer); room.endTimer = null; },
+
+  // the round's clock just started (server.js startClock)
+  clockStarted: scheduleEnd,
 
   // Someone joined a game in progress: they get a spot and wait for their turn.
   join(room, p) { place(room, p); },

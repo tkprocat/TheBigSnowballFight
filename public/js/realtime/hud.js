@@ -41,9 +41,18 @@ export function updateReadout() {
   if ($('#turnMain').textContent !== main) $('#turnMain').textContent = main;
   $('#turnMain').classList.toggle('hurry', !S.over && roundGoal().hurry);
   // the clock stays in view even while the banner says something else
+  // The lobby code, then the clock (or sudden death), then the spectator hint, as separate pieces: on phones only
+  // the lobby code is hidden, so the clock stays in view whatever the banner says.
   const goal = roundGoal(), timed = S.win && S.win.type === 'time';
-  const sub = 'Lobby ' + NET.code + (timed && main !== goal.text ? ' · ' + goal.text : '') + (S.watching ? ' · ' + watchHint() : '');
-  if ($('#turnSub').textContent !== sub) $('#turnSub').textContent = sub;
+  const parts = [['code', 'Lobby ' + NET.code]];
+  if (timed && main !== goal.text) parts.push(['goal', goal.text]);
+  if (S.watching) parts.push(['hint', watchHint()]);
+  const key = parts.map((p) => p[1]).join('|');
+  if ($('#turnSub').dataset.key !== key) {
+    const sub = $('#turnSub'); sub.textContent = ''; sub.dataset.key = key;
+    for (const [cls, text] of parts) { const s = document.createElement('span'); s.className = 'sub-' + cls; s.textContent = text; sub.appendChild(s); } // the ' · ' between them is CSS
+  }
+  $('#turnSub').classList.toggle('hurry', timed && !S.over && goal.hurry);
   $('#meter').style.visibility = 'hidden';
   $('#angleTxt').textContent = 'Angle ' + Math.round(R.pitch * 180 / Math.PI) + '°';
   $('#powerTxt').textContent = p ? p.ammo + ' / ' + CARRY_MAX + ' snowballs' + (R.landsAt != null ? ' · lands ' + Math.round(R.landsAt) + ' m' : '') : '';
