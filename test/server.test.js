@@ -96,6 +96,26 @@ test('a hit scores, moves the victim, and the 5th hit wins the round', () => {
   assert.ok(room.players.every((p) => p.score === 0));
 });
 
+test('move once per turn, inside your ring, then throw', () => {
+  const { host, room } = lobby(2);
+  act('start', host.code, host.token);
+  room.map = { walls: [], trees: [], deco: [] };
+  const p = current(room), other = room.players.find((q) => q !== p);
+  other.x = p.x + 3; other.z = p.z;
+  assert.strictEqual(room.phase, 'move');
+  assert.throws(() => act('move', host.code, other.token, { x: 0, z: 0 }), /not your turn/);
+  assert.throws(() => act('move', host.code, p.token, { x: 'a', z: 0 }), /Bad move/);
+  assert.throws(() => act('move', host.code, p.token, { x: other.x, z: other.z }), /stand there/);
+  const from = { x: p.x, z: p.z };
+  act('move', host.code, p.token, { x: p.x - 50, z: p.z });
+  assert.ok(Math.abs(Math.hypot(p.x - from.x, p.z - from.z) - 5) < 0.01, 'clamped to 5 m');
+  assert.strictEqual(room.phase, 'aim');
+  assert.throws(() => act('move', host.code, p.token, { x: p.x, z: p.z }), /already moved/);
+  act('throw', host.code, p.token, { yaw: 0, pitch: 0.5, power: 0.3 });
+  assert.strictEqual(room.phase, 'move', 'next player starts by moving');
+  assert.strictEqual(viewFor(room, p).next, p.id, 'with two players, you are next after them');
+});
+
 test('views show positions and scores, never tokens', () => {
   const { host, room } = lobby(2);
   act('start', host.code, host.token);
@@ -129,8 +149,8 @@ test('bots throw on their own turn; a room with no people left is removed', asyn
   room.cur = 0; room.busyUntil = 0;
   act('throw', host.code, host.token, { yaw: 0, pitch: 0.5, power: 0.3 });
   assert.ok(current(room).cpu, "now it is the bot's turn");
-  // the bot waits for the snowball to land, then aims for 1.3 s before throwing (BOT_DELAY_MS=0 here)
-  await new Promise((r) => setTimeout(r, 6000));
+  // the bot waits for the snowball to land, walks for 0.9 s, then aims for 1.3 s before throwing (BOT_DELAY_MS=0 here)
+  await new Promise((r) => setTimeout(r, 8000));
   assert.strictEqual(room.throwN, 2, 'the bot threw');
   assert.strictEqual(room.lastThrow.by, room.players[1].id);
   act('leave', host.code, host.token);

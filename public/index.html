@@ -68,6 +68,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 .sc .nm{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .sc .pts{margin-left:auto;font-family:var(--display);font-size:1.05rem;font-variant-numeric:tabular-nums;padding-left:6px}
 .sc.cur{box-shadow:0 0 0 3px var(--gold),0 3px 10px rgba(20,35,61,.15)}
+.nexttag{font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-left:4px}
 .sc .dot{width:18px;height:18px}
 #turnHud{top:calc(var(--sat) + 12px);left:50%;transform:translateX(-50%);text-align:center;pointer-events:none}
 #turnMain{font-family:var(--display);font-size:clamp(1.2rem,4.5vw,1.8rem);color:#fff;text-shadow:0 2px 0 rgba(20,35,61,.45),0 4px 14px rgba(20,35,61,.4);white-space:nowrap}
@@ -117,7 +118,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
   <div class="panel">
     <div class="brand">
       <h1>The Big Snowball Fight</h1>
-      <p>Pick your angle, time your power, mind the wind. First to 5 hits wins.</p>
+      <p>Duck behind cover, pick your angle, time your power, mind the wind. First to 5 hits wins.</p>
     </div>
     <div class="card">
       <span class="lbl">Your snowfighter</span>
@@ -139,7 +140,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
       <div class="row"><button class="btn primary" id="hostBtn" disabled>Create a lobby</button></div>
       <div class="row"><input type="text" id="codeIn" maxlength="4" placeholder="CODE" aria-label="Lobby code"><button class="btn" id="joinBtn" disabled>Join lobby</button></div>
     </div>
-    <p class="keys">Keyboard: ← → aim, ↑ ↓ angle, Tab next target, hold Space to charge and release to throw. On a phone, use the on-screen buttons.</p>
+    <p class="keys">Each turn: first walk up to 5 m (arrows or tap the snow, Space to confirm), then aim with ← → and ↑ ↓ and hold Space to throw. Hide from whoever is next. On a phone, use the on-screen buttons.</p>
   </div>
 </div>
 
@@ -173,7 +174,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
       <div id="windTxt"><small>Wind</small><span id="windVal">0 km/h</span></div>
     </div>
   </div>
-  <div id="hint">← → aim · ↑ ↓ angle · Tab next target · hold Space to throw</div>
+  <div id="hint"></div>
   <div class="hud" id="controls">
     <div id="pad">
       <button class="pb" id="bTarget" aria-label="Aim at next friend" style="grid-column:1;grid-row:1;font-size:1rem">◎</button>
@@ -206,7 +207,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
-import { clamp, lerp, TAU, angDiff, mulberry32, DT, BALL_R, PITCH_MIN, PITCH_MAX, WIN_SCORE, TURN_LIMIT, COLORS, BOT_NAMES, makeMap, simulate, windFor, spawnPoint, planThrow } from './physics.js';
+import { clamp, lerp, TAU, angDiff, mulberry32, DT, BALL_R, PITCH_MIN, PITCH_MAX, WIN_SCORE, TURN_LIMIT, COLORS, BOT_NAMES, makeMap, simulate, windFor, spawnPoint, planThrow, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover } from './physics.js';
 
 /* =========================================================
    Utilities
@@ -381,6 +382,16 @@ const preview = new THREE.Points(prevGeo, new THREE.PointsMaterial({ size: 0.28,
 preview.frustumCulled = false; preview.visible = false; scene.add(preview);
 const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 40), new THREE.MeshBasicMaterial({ color: 0xffc83a, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
 ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; scene.add(ring);
+// where you may walk this turn, and where you will stand
+const moveRing = new THREE.Mesh(new THREE.RingGeometry(MOVE_RADIUS - 0.1, MOVE_RADIUS, 72), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+moveRing.rotation.x = -Math.PI / 2; moveRing.position.y = 0.05; moveRing.visible = false; scene.add(moveRing);
+const moveFill = new THREE.Mesh(new THREE.CircleGeometry(MOVE_RADIUS, 72), new THREE.MeshBasicMaterial({ color: 0x7fd3ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
+moveFill.rotation.x = -Math.PI / 2; moveFill.position.y = 0.045; moveFill.visible = false; scene.add(moveFill);
+const marker = new THREE.Group();
+const markerMat = new THREE.MeshBasicMaterial({ color: 0xffc83a, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false });
+{ const r = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 36), markerMat); r.rotation.x = -Math.PI / 2; r.position.y = 0.06; marker.add(r);
+  const c = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.5, 12), markerMat); c.rotation.x = Math.PI; c.position.y = 0.9; marker.add(c); }
+marker.visible = false; scene.add(marker);
 
 /* ---------- avatars ---------- */
 function makeAvatar(color) {
@@ -456,12 +467,21 @@ const S = {
   flights: [], busy: false, over: false,
   held: { l: 0, r: 0, u: 0, d: 0 }, cpu: null, targetIdx: 0,
   turnKey: '', turnSince: 0, camMode: 'orbit', impactAt: null,
+  phase: 'move', moveTo: { x: 0, z: 0 }, nextId: null,
 };
 const me = { name: lsGet('sb_name', ''), color: lsGet('sb_color', COLORS[0]) };
 if (!me.name) me.name = 'Player ' + (1 + Math.floor(Math.random() * 99));
 
 function curPlayer() { return S.players[S.cur] || null; }
 function currentWind() { return windFor(S.seed, S.turn); }
+function canMove() { return canControl() && S.phase === 'move'; }
+function nextPlayer() { return S.mode === 'online' ? (S.byId.get(S.nextId) || null) : (S.players.length > 1 ? S.players[(S.cur + 1) % S.players.length] : null); }
+// Would the next thrower have a clear line to this spot? Other players and obstacles block it.
+function hiddenFromNext(spot) {
+  const p = curPlayer(), n = nextPlayer();
+  if (!p || !n || n === p) return null;
+  return lineBlocked(n, spot, S.map, S.players.filter(o => o !== p && o !== n));
+}
 function canControl() { const p = curPlayer(); return S.screen === 'game' && !S.busy && !S.over && !S.sending && p && p.local && !p.cpu; }
 
 function addPlayer(o) {
@@ -504,11 +524,31 @@ function onTurnStart() {
     if (S.mode === 'online') sendAim(true);
   }
   S.camMode = 'aim';
-  if (p.cpu && S.mode === 'local') S.cpu = cpuPlan(p);
+  S.phase = 'move'; S.moveTo = { x: p.x, z: p.z };
+  if (p.cpu && S.mode === 'local') S.cpu = { phase: 'think', t: 0.6 };
   else S.cpu = null;
   if (S.mode === 'local' && !p.cpu && S.players.filter(q => !q.cpu).length > 1) toast(p.name + "'s turn", 'Pass the device');
   else if (p.local && !p.cpu && S.mode === 'online' && S.players.length > 1) { toast('Your turn!'); sfx.tick(); }
   renderHUD();
+}
+
+function confirmMove() {
+  const p = curPlayer(); if (!canMove()) return;
+  const to = clampMove(p, S.moveTo);
+  const stay = Math.hypot(to.x - p.x, to.z - p.z) < 0.05;
+  if (!stay && !standOk(to.x, to.z, S.map, S.players.filter(o => o !== p))) { toast("You can't stand there", '', 1000); return; }
+  audio();
+  if (S.mode === 'online') {
+    S.sending = true;
+    api('move', { x: +(stay ? p.x : to.x).toFixed(3), z: +(stay ? p.z : to.z).toFixed(3) })
+      .then(() => { S.phase = 'aim'; S.aimYaw = faceTarget(p, 0); sendAim(true); })
+      .catch(e => toast(e.message, '', 1600))
+      .finally(() => { S.sending = false; renderHUD(); });
+  } else {
+    if (!stay) { p.x = to.x; p.z = to.z; }
+    S.phase = 'aim'; S.aimYaw = faceTarget(p, 0);
+    renderHUD();
+  }
 }
 
 function nextLocalTurn() {
@@ -603,13 +643,21 @@ function gameOver(winner) {
 function cpuPlan(p) {
   const opp = opponentsOf(p); if (!opp.length) return null;
   const plan = planThrow(p, opp, currentWind(), S.map);
-  return Object.assign(plan, { phase: 'think', t: 0.7 });
+  return plan;
 }
 function updateCpu(dt) {
   const c = S.cpu, p = curPlayer();
   if (!c || !p || !p.cpu || S.busy || S.over) return;
   c.t -= dt;
-  if (c.phase === 'think') { if (c.t <= 0) { c.phase = 'aim'; c.t = 1.2; } }
+  if (c.phase === 'think') {
+    if (c.t <= 0) {
+      const spot = chooseCover(p, nextPlayer(), S.map, S.players);
+      p.x = spot.x; p.z = spot.z; S.phase = 'aim';
+      c.phase = 'walk'; c.t = 0.9;
+    }
+  } else if (c.phase === 'walk') {
+    if (c.t <= 0) { Object.assign(c, cpuPlan(p), { phase: 'aim', t: 1.2 }); }
+  }
   else if (c.phase === 'aim') {
     S.aimYaw += angDiff(S.aimYaw, c.yaw) * Math.min(1, dt * 3);
     S.aimPitch = lerp(S.aimPitch, c.pitch, Math.min(1, dt * 3));
@@ -751,6 +799,7 @@ function syncFromView(v) {
   S.players = ordered;
   if (fresh) { NET.seenN = th.n; showServerThrow(th); }
   S.turn = Math.floor(num(v.turn));
+  S.nextId = typeof v.next === 'string' ? v.next : null;
   S.turnDeadline = v.turnLeft == null ? 0 : Date.now() + num(v.turnLeft);
   const ci = S.players.findIndex(p => p.id === v.cur);
   if (!S.busy) S.cur = ci < 0 ? 0 : ci; // keep the thrower highlighted until their snowball lands
@@ -758,6 +807,7 @@ function syncFromView(v) {
   if (v.over && !S.over && !S.busy) { const w = S.byId.get(v.over.winner); if (w) gameOver(w); }
   const key = v.round + ':' + v.turn + ':' + v.cur;
   if (!S.busy && !v.over && key !== S.turnKey) { S.turnKey = key; onTurnStart(); }
+  if (!S.busy && v.phase === 'aim' && S.phase === 'move') { S.phase = 'aim'; const cp = curPlayer(); if (cp && cp.local) S.aimYaw = faceTarget(cp, 0); }
   renderHUD();
 }
 
@@ -909,7 +959,9 @@ function renderHUD() {
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = p.color;
     const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (S.mode === 'online' && p.local ? ' (you)' : '') + (p.away ? ' (away)' : '');
     const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = p.score;
-    d.append(dot, nm, pts); box.appendChild(d);
+    d.append(dot, nm);
+    if (p === nextPlayer() && i !== S.cur) { const nx = document.createElement('span'); nx.className = 'nexttag'; nx.textContent = 'next'; d.appendChild(nx); }
+    d.append(pts); box.appendChild(d);
   });
   renderTurnBanner();
   const w = currentWind();
@@ -918,14 +970,15 @@ function renderHUD() {
   $('#controls').style.opacity = mine ? 1 : 0.45;
   $('#throwBtn').disabled = !mine;
   $('#hint').hidden = !mine;
+  $('#hint').textContent = canMove() ? 'Arrows or tap the snow to pick a spot · Space to move there · Tab to stay' : '← → aim · ↑ ↓ angle · Tab next target · hold Space to throw';
 }
 function renderTurnBanner() {
   const p = curPlayer(); if (!p) { $('#turnMain').textContent = ''; return; }
   let main;
   if (S.over) main = 'Round over';
   else if (S.busy) main = 'Incoming!';
-  else if (p.local && !p.cpu) main = S.mode === 'online' ? 'Your turn' : p.name + "'s turn";
-  else main = p.name + ' is aiming…';
+  else if (p.local && !p.cpu) main = (S.mode === 'online' ? 'Your turn' : p.name + "'s turn") + (S.phase === 'move' ? ': move' : ': throw');
+  else main = p.name + (S.phase === 'move' ? ' is moving…' : ' is aiming…');
   $('#turnMain').textContent = main;
   if (S.mode === 'online') {
     const left = Math.max(0, Math.ceil((S.turnDeadline - Date.now()) / 1000));
@@ -938,7 +991,7 @@ function renderTurnBanner() {
 /* =========================================================
    Input
    ========================================================= */
-function startCharge() { if (!canControl() || S.charging) return; audio(); S.charging = true; S.chargeT = 0; S.power = 0; $('#throwBtn').classList.add('on'); }
+function startCharge() { if (canMove()) { confirmMove(); return; } if (!canControl() || S.charging) return; audio(); S.charging = true; S.chargeT = 0; S.power = 0; $('#throwBtn').classList.add('on'); }
 function releaseCharge() { $('#throwBtn').classList.remove('on'); if (!S.charging) return; if (!canControl()) { S.charging = false; return; } throwNow(); }
 const KEYMAP = { ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd' };
 addEventListener('keydown', e => {
@@ -958,7 +1011,7 @@ for (const b of document.querySelectorAll('.pb[data-k]')) {
   const up = () => { S.held[k] = 0; b.classList.remove('on'); };
   b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
 }
-function nextTarget() { if (!canControl()) return; S.targetIdx++; S.aimYaw = faceTarget(curPlayer(), S.targetIdx); }
+function nextTarget() { if (canMove()) { const p = curPlayer(); S.moveTo = { x: p.x, z: p.z }; return; } if (!canControl()) return; S.targetIdx++; S.aimYaw = faceTarget(curPlayer(), S.targetIdx); }
 $('#bTarget').addEventListener('click', nextTarget);
 const tb = $('#throwBtn');
 tb.addEventListener('pointerdown', e => { e.preventDefault(); tb.setPointerCapture(e.pointerId); startCharge(); });
@@ -966,14 +1019,24 @@ tb.addEventListener('pointerup', releaseCharge);
 tb.addEventListener('pointercancel', () => { S.charging = false; tb.classList.remove('on'); });
 // drag on the 3D view to aim
 let drag = null;
-canvas.addEventListener('pointerdown', e => { if (!canControl()) return; drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+const raycaster = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), ndc = new THREE.Vector2();
+canvas.addEventListener('pointerdown', e => { if (!canControl()) return; drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY }; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', e => {
   if (!drag || !canControl()) return;
   S.aimYaw -= (e.clientX - drag.x) * 0.005;
-  S.aimPitch = clamp(S.aimPitch + (e.clientY - drag.y) * 0.004, PITCH_MIN, PITCH_MAX);
-  drag = { x: e.clientX, y: e.clientY };
+  if (!canMove()) S.aimPitch = clamp(S.aimPitch + (e.clientY - drag.y) * 0.004, PITCH_MIN, PITCH_MAX);
+  drag.x = e.clientX; drag.y = e.clientY;
 });
-canvas.addEventListener('pointerup', () => { drag = null; });
+canvas.addEventListener('pointerup', e => {
+  if (drag && canMove() && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 8) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    const hit = raycaster.ray.intersectPlane(groundPlane, new THREE.Vector3());
+    if (hit) S.moveTo = clampMove(curPlayer(), { x: hit.x, z: hit.z });
+  }
+  drag = null;
+});
 canvas.addEventListener('pointercancel', () => { drag = null; });
 
 /* =========================================================
@@ -984,7 +1047,14 @@ const tmpV = new THREE.Vector3();
 let lastAimPub = 0;
 function updateAim(dt) {
   const p = curPlayer();
-  if (canControl()) {
+  if (canMove()) {
+    // arrows walk the marker, relative to the way the camera faces
+    const f = S.held.u - S.held.d, sd = S.held.l - S.held.r;
+    if (f || sd) {
+      const y = S.aimYaw, sp = 4.5 * dt;
+      S.moveTo = clampMove(p, { x: S.moveTo.x + (Math.sin(y) * f + Math.cos(y) * sd) * sp, z: S.moveTo.z + (Math.cos(y) * f - Math.sin(y) * sd) * sp });
+    }
+  } else if (canControl()) {
     S.aimYaw += (S.held.l - S.held.r) * 1.1 * dt;
     S.aimPitch = clamp(S.aimPitch + (S.held.u - S.held.d) * 0.7 * dt, PITCH_MIN, PITCH_MAX);
     if (Math.abs(angDiff(p.yaw, S.aimYaw)) > 1e-4 || Math.abs(p.pitch - S.aimPitch) > 1e-4) {
@@ -998,14 +1068,34 @@ function updateAim(dt) {
     const ph = (S.chargeT / 1.3) % 2; S.power = ph < 1 ? ph : 2 - ph;
   }
   $('#meterFill').style.width = (S.power * 100).toFixed(1) + '%';
-  const showPitch = p ? (p.local ? S.aimPitch : p.pitch) : S.aimPitch;
-  $('#angleTxt').textContent = 'Angle ' + Math.round(showPitch * 180 / Math.PI) + '°';
-  $('#powerTxt').textContent = 'Power ' + Math.round(S.power * 100) + '%';
+  if (canMove()) {
+    const d = Math.hypot(S.moveTo.x - p.x, S.moveTo.z - p.z);
+    $('#angleTxt').textContent = 'Walk ' + d.toFixed(1) + ' of ' + MOVE_RADIUS + ' m';
+    const hid = hiddenFromNext(S.moveTo), n = nextPlayer();
+    $('#powerTxt').textContent = hid == null ? '' : (hid ? 'Hidden from ' + n.name : n.name + ' can see you');
+    $('#throwBtn').innerHTML = d < 0.05 ? 'STAY<br>HERE' : 'MOVE<br>HERE';
+    $('#meter').style.visibility = 'hidden';
+  } else {
+    const showPitch = p ? (p.local ? S.aimPitch : p.pitch) : S.aimPitch;
+    $('#angleTxt').textContent = 'Angle ' + Math.round(showPitch * 180 / Math.PI) + '°';
+    $('#powerTxt').textContent = 'Power ' + Math.round(S.power * 100) + '%';
+    if ($('#throwBtn').textContent !== 'HOLDTO THROW') $('#throwBtn').innerHTML = 'HOLD<br>TO THROW';
+    $('#meter').style.visibility = '';
+  }
 }
 
 function updatePreview() {
   const p = curPlayer();
-  if (!p || !canControl()) { preview.visible = false; return; }
+  const moving = !!(p && canMove());
+  moveRing.visible = moveFill.visible = marker.visible = moving;
+  if (moving) {
+    moveRing.position.x = moveFill.position.x = p.x; moveRing.position.z = moveFill.position.z = p.z;
+    marker.position.set(S.moveTo.x, 0, S.moveTo.z);
+    const ok = Math.hypot(S.moveTo.x - p.x, S.moveTo.z - p.z) < 0.05 || standOk(S.moveTo.x, S.moveTo.z, S.map, S.players.filter(o => o !== p));
+    const hid = hiddenFromNext(S.moveTo);
+    markerMat.color.set(!ok ? 0xe2434b : hid ? 0x2bb673 : 0xffc83a);
+  }
+  if (!p || !canControl() || moving) { preview.visible = false; return; }
   const pw = S.charging ? S.power : 0.5;
   const s = simulate(p, S.aimYaw, S.aimPitch, pw, { x: 0, z: 0 }, [], S.map, 54);
   const arr = prevGeo.attributes.position.array;
@@ -1076,8 +1166,13 @@ function updateCamera(dt, time) {
   } else {
     const yaw = p.local ? S.aimYaw : p.yaw;
     const ax = p.avatar.position.x, az = p.avatar.position.z;
-    want.set(ax - Math.sin(yaw) * 6.5 + Math.cos(yaw) * 1.2, 3.4, az - Math.cos(yaw) * 6.5 - Math.sin(yaw) * 1.2);
-    look.set(ax + Math.sin(yaw) * 12, 1.2, az + Math.cos(yaw) * 12); k = 4;
+    if (canMove()) {
+      want.set(ax - Math.sin(yaw) * 9, 9, az - Math.cos(yaw) * 9);
+      look.set(ax + Math.sin(yaw) * 3, 0, az + Math.cos(yaw) * 3); k = 3;
+    } else {
+      want.set(ax - Math.sin(yaw) * 6.5 + Math.cos(yaw) * 1.2, 3.4, az - Math.cos(yaw) * 6.5 - Math.sin(yaw) * 1.2);
+      look.set(ax + Math.sin(yaw) * 12, 1.2, az + Math.cos(yaw) * 12); k = 4;
+    }
   }
   camera.position.lerp(want, Math.min(1, dt * k));
   camLook.lerp(look, Math.min(1, dt * k * 1.5));

@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
   TAU, DT, PITCH_MIN, PITCH_MAX, WIN_SCORE, TURN_LIMIT, MAX_PLAYERS, COLORS, BOT_NAMES,
-  clamp, makeMap, simulate, windFor, spawnPoint, planThrow, throwShowMs,
+  clamp, makeMap, simulate, windFor, spawnPoint, planThrow, throwShowMs, clampMove, standOk, chooseCover,
 } from './public/physics.js';
 
 const PORT = process.env.PORT || 3000;
@@ -44,13 +44,14 @@ function pickColor(room, wanted) {
 function newRoom(code) {
   return {
     code, players: [], host: null, started: false, over: null, seed: 1, round: 0,
-    cur: 0, turn: 0, throwN: 0, lastThrow: null, busyUntil: 0, turnEnds: null,
+    cur: 0, turn: 0, phase: 'move', throwN: 0, lastThrow: null, busyUntil: 0, turnEnds: null,
     clock: null, botTimer: null, lastActive: Date.now(),
   };
 }
 
 const humans = (room) => room.players.filter((p) => !p.cpu);
 const curPlayer = (room) => room.players[room.cur] || null;
+const nextPlayer = (room) => room.players.length > 1 ? room.players[(room.cur + 1) % room.players.length] : null;
 
 function place(room, p) {
   const sp = spawnPoint(rand, room.map, room.players.filter((o) => o !== p && o.placed));
@@ -70,6 +71,8 @@ export function viewFor(room, member) {
     round: room.round,
     turn: room.turn,
     cur: room.started && curPlayer(room) ? curPlayer(room).id : null,
+    next: room.started && nextPlayer(room) ? nextPlayer(room).id : null,
+    phase: room.phase,
     turnLeft: room.turnEnds ? Math.max(0, room.turnEnds - now) : null,
     busyLeft: Math.max(0, room.busyUntil - now),
     lastThrow: room.lastThrow,
@@ -100,6 +103,7 @@ function startTurn(room) {
   room.turnEnds = null;
   if (!room.started || room.over || !room.players.length) return;
   const p = curPlayer(room);
+  room.phase = 'move';
   const wait = Math.max(0, room.busyUntil - Date.now());
   room.turnEnds = Date.now() + wait + TURN_LIMIT * 1000;
   room.clock = setTimeout(() => {
@@ -116,7 +120,20 @@ function startTurn(room) {
   }
 }
 
+// A bot first walks to cover from the next thrower, then aims and throws.
 function botTurn(room, bot) {
+  if (curPlayer(room) !== bot || room.over) return;
+  const spot = chooseCover(bot, nextPlayer(room), room.map, room.players, rand);
+  bot.x = +spot.x.toFixed(3); bot.z = +spot.z.toFixed(3);
+  room.phase = 'aim';
+  broadcast(room);
+  room.botTimer = setTimeout(() => {
+    try { botAim(room, bot); } catch (e) { console.error(`Bot ${bot.name} in room ${room.code} failed:`, e); }
+  }, 900);
+  if (room.botTimer.unref) room.botTimer.unref();
+}
+
+function botAim(room, bot) {
   if (curPlayer(room) !== bot || room.over) return;
   const plan = planThrow(bot, room.players.filter((o) => o !== bot), windFor(room.seed, room.turn), room.map, rand);
   bot.yaw = plan.yaw; bot.pitch = plan.pitch;
@@ -251,6 +268,20 @@ export const actions = {
     member.yaw = toYaw(yaw); member.pitch = toPitch(pitch);
     broadcastAim(room, member);
     return 'quiet';
+  },
+
+  // Walk somewhere inside your move ring, once per turn, before throwing. Moving is optional.
+  move({ x, z }, room, member) {
+    if (!room.started) throw new Error('The game has not started');
+    if (room.over) throw new Error('The round is over');
+    if (curPlayer(room) !== member) throw new Error('It is not your turn');
+    if (room.phase !== 'move') throw new Error('You have already moved this turn');
+    if (Date.now() < room.busyUntil - 150) throw new Error('Wait for the last snowball to land');
+    if (![x, z].every((v) => typeof v === 'number' && Number.isFinite(v))) throw new Error('Bad move');
+    const to = clampMove(member, { x, z });
+    if (!standOk(to.x, to.z, room.map, room.players.filter((o) => o !== member))) throw new Error("You can't stand there");
+    member.x = +to.x.toFixed(3); member.z = +to.z.toFixed(3);
+    room.phase = 'aim';
   },
 
   throw({ yaw, pitch, power }, room, member) {

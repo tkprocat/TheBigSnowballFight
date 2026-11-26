@@ -125,3 +125,51 @@ export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1)
     power: clamp(best.power + g() * 0.06, 0.02, 1),
   };
 }
+
+// ---------- moving before you throw ----------
+export const MOVE_RADIUS = 5; // metres you may walk at the start of your turn
+
+// Pull a wanted spot back inside your move ring.
+export function clampMove(from, to) {
+  const dx = to.x - from.x, dz = to.z - from.z, d = Math.hypot(dx, dz);
+  if (d <= MOVE_RADIUS) return { x: to.x, z: to.z };
+  return { x: from.x + dx / d * MOVE_RADIUS, z: from.z + dz / d * MOVE_RADIUS };
+}
+
+// Can someone stand here? Not inside a wall or tree, not on top of another player, not out of the arena.
+export function standOk(x, z, map, others) {
+  if (!Number.isFinite(x) || !Number.isFinite(z) || Math.hypot(x, z) > ARENA + 4) return false;
+  for (const w of map.walls) {
+    const dx = x - w.x, dz = z - w.z, c = Math.cos(-w.ry), s = Math.sin(-w.ry);
+    if (Math.abs(dx * c - dz * s) < w.w / 2 + 0.55 && Math.abs(dx * s + dz * c) < w.d / 2 + 0.55) return false;
+  }
+  for (const t of map.trees) if (Math.hypot(x - t.x, z - t.z) < 0.5 * t.s + 0.6) return false;
+  for (const o of others) if (Math.hypot(x - o.x, z - o.z) < 1.3) return false;
+  return true;
+}
+
+// Is the straight line between two players blocked at chest height by a wall, a tree or someone else?
+export function lineBlocked(a, b, map, others) {
+  const d = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(2, Math.ceil(d / 0.25));
+  for (let i = 1; i < n; i++) {
+    const t = i / n, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+    if (obstacleHit(x, 1.2, z, map)) return true;
+    for (const o of others) if (Math.hypot(x - o.x, z - o.z) < 0.55) return true;
+  }
+  return false;
+}
+
+// A computer player's move: somewhere in its ring, hidden from the next thrower if it can find such a spot.
+export function chooseCover(p, next, map, players, rng = Math.random) {
+  const others = players.filter((o) => o !== p);
+  const shields = players.filter((o) => o !== p && o !== next);
+  let best = { x: p.x, z: p.z }, bestScore = (next && lineBlocked(next, p, map, shields) ? 10 : 0) + rng();
+  for (let i = 0; i < 32; i++) {
+    const a = rng() * TAU, r = Math.sqrt(rng()) * MOVE_RADIUS;
+    const c = { x: p.x + Math.cos(a) * r, z: p.z + Math.sin(a) * r };
+    if (!standOk(c.x, c.z, map, others)) continue;
+    const score = (next && lineBlocked(next, c, map, shields) ? 10 : 0) + rng();
+    if (score > bestScore) { best = c; bestScore = score; }
+  }
+  return best;
+}

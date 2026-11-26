@@ -1,6 +1,6 @@
 # The Big Snowball Fight
 
-A browser-based, turn-based 3D snowball fight. Each turn, pick a direction and an angle, then time the power meter and release. The snowball flies on a ballistic arc pushed by the wind, and the goal is to hit your friends' avatars. Hit someone and they hop to a new spot. First to 5 hits wins.
+A browser-based, turn-based 3D snowball fight. Each turn, first walk up to 5 m (duck behind a wall, a tree or another player to hide from whoever throws next), then pick a direction and an angle, time the power meter and release. The snowball flies on a ballistic arc pushed by the wind, and the goal is to hit your friends' avatars. Hit someone and they hop to a new spot. First to 5 hits wins.
 
 ## Run it
 
@@ -41,6 +41,7 @@ Lobbies live in memory, so a restart ends games in progress.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
+| Pick where to walk (move step) | Arrows, or tap the snow; Space to go, Tab to stay | ◀ ▲ ▼ ▶ or tap; the big button to go, ◎ to stay |
 | Aim left / right | ← → (or A/D), or drag the view | ◀ ▶ |
 | Angle up / down | ↑ ↓ (or W/S), or drag the view | ▲ ▼ |
 | Aim at next friend | Tab | ◎ |
@@ -49,7 +50,7 @@ Lobbies live in memory, so a restart ends games in progress.
 ## How it works
 
 - `public/physics.js` holds the game rules and physics (fixed 1/120 s steps, gravity, wind, trees, snow walls, spawn points, the computer player's aim). It is shared by the browser and the server.
-- `server.js` runs lobbies. Clients send actions to `POST /api/<action>` and get room updates over Server-Sent Events from `GET /events`. The server is the authority: it checks whose turn it is, simulates each throw, decides hits and scores, moves hit players, runs bots and the turn timer.
+- `server.js` runs lobbies. Clients send actions to `POST /api/<action>` and get room updates over Server-Sent Events from `GET /events`. The server is the authority: it checks whose turn it is, keeps moves inside the 5 m ring and out of walls and trees, simulates each throw, decides hits and scores, moves hit players, runs bots and the turn timer.
 - `public/index.html` is the Three.js client. It replays each throw the server reports (same inputs, same physics, cut at the server's step count) and shows the server's result.
 - Wind comes from the lobby's seed and the turn number, so everyone sees the same wind.
 
