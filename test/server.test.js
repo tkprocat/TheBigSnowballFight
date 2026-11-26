@@ -208,7 +208,7 @@ test('joining mid-game gives you a spot; leaving keeps the turn order sane', () 
   void late; void others;
 });
 
-test('bots throw on their own turn; a room with no people left is removed', async () => {
+test('bots take their own turn; a room with no people left is removed', async () => {
   const { host, room } = lobby(1);
   act('addBot', host.code, host.token);
   act('start', host.code, host.token);
@@ -217,8 +217,12 @@ test('bots throw on their own turn; a room with no people left is removed', asyn
   assert.ok(current(room).cpu, "now it is the bot's turn");
   // the bot waits for the snowball to land, walks for 0.9 s, then aims for 1.3 s before throwing (BOT_DELAY_MS=0 here)
   await new Promise((r) => setTimeout(r, 8000));
-  assert.strictEqual(room.throwN, 2, 'the bot threw');
-  assert.strictEqual(room.lastThrow.by, room.players[1].id);
+  // bots sometimes pack a heavy snowball instead of throwing; either way the bot took its turn
+  const bot = room.players[1];
+  const botThrew = room.throwN === 2 && room.lastThrow.by === bot.id;
+  const botPacked = room.packN === 1 && room.lastPack.by === bot.id;
+  assert.ok(botThrew || botPacked, 'the bot took its turn');
+  assert.strictEqual(room.turn, 2);
   act('leave', host.code, host.token);
   assert.ok(!rooms.has(host.code));
 });
