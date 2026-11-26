@@ -217,6 +217,7 @@ test('sprinting allows a faster step, but no throwing until you stop', () => {
 // ---------- bot path finding (modes/realtime/nav.js) ----------
 const nav = await import('../modes/realtime/nav.js');
 const { makeMap, standOk: canStand } = await import('../public/shared/physics.js');
+const { pathClear } = await import('../public/shared/realtimeRules.js');
 
 test('the walk grid matches standOk exactly, and paths go round walls and through fort gates', () => {
   const big = makeMap(4242, 'large'), grid = nav.buildNav(big);
@@ -231,7 +232,7 @@ test('the walk grid matches standOk exactly, and paths go round walls and throug
   assert.ok(route, 'there is a way in');
   assert.ok(route.dist > Math.hypot(outside.x, outside.z) + 1, 'not straight through the wall');
   let at = outside;
-  for (const p of route.pts) { assert.ok(nav.gridClear(grid, at, p), 'every leg is walkable'); at = p; }
+  for (const p of route.pts) { assert.ok(pathClear(at, p, big), 'every leg is walkable by the movement rules'); at = p; }
 });
 
 test('bots choose the snowball nearest on foot, not the one behind a wall', () => {
@@ -264,4 +265,22 @@ test('bots in a fort map keep moving: little time stuck, and a game still finish
   assert.ok(room.over, 'someone won within 2 minutes');
   assert.ok(stuckN / Math.max(1, windows) < 0.2, `stuck ${stuckN} of ${windows} walking windows`);
   stopTick(room);
+});
+
+test('path search: settles every square once and finds far snowballs; shortcuts respect the collision rules', () => {
+  // review of #42: Float32 costs could re-queue squares forever and run out of budget on long searches
+  const empty = { walls: [], trees: [], deco: [], snowmen: [], size: 30 };
+  const g = nav.buildNav(empty);
+  assert.ok(nav.nearestBallPath(g, { x: -25, z: 0 }, [{ id: 1, x: 25, z: 0 }]), 'a snowball 50 m away is found');
+  const big = makeMap(77, 'large'), gb = nav.buildNav(big);
+  const far = nav.findPath(gb, { x: -40, z: -40 }, { x: 40, z: 40 });
+  assert.ok(far, 'a route corner to corner across the big map');
+  // review of #42: a shortcut the grid allowed could clip a tree the movement rules block
+  const treeMap = { walls: [], trees: [{ x: 0, z: 0, s: 1 }], deco: [], snowmen: [], size: 30 };
+  const gt = nav.buildNav(treeMap);
+  assert.strictEqual(nav.segmentClear(gt, { x: 1.05, z: -2 }, { x: 1.05, z: 2 }), false, 'too close to the tree');
+  assert.strictEqual(pathClear({ x: 1.05, z: -2 }, { x: 1.05, z: 2 }, treeMap), false);
+  const round = nav.findPath(gt, { x: 1.05, z: -3 }, { x: 1.05, z: 3 });
+  let at = { x: 1.05, z: -3 };
+  for (const p of round.pts) { assert.ok(pathClear(at, p, treeMap), 'the route goes round the tree'); at = p; }
 });

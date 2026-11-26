@@ -7,6 +7,8 @@ import { CARRY_MAX, RUN_SPEED, SPRINT_SPEED, moveStep, botAim } from '../../publ
 import { navFor, findPath, nearestBallPath, walkableSpot } from './nav.js';
 
 const REPLAN_MS = 1500; // look for a better snowball or route this often
+export const PLANS_PER_TICK = 4; // at most this many bots plan a route in one server tick, so 16 bots planning at
+                                 // once (e.g. at GO) can't make one tick slow; the rest plan in the next ticks
 
 function nearest(from, list) {
   let best = null, bd = Infinity;
@@ -48,12 +50,15 @@ export function botStep(room, bot, dt, now, game) {
   const planOk = (pl) => pl && (pl.kind !== 'ball' || room.rt.balls.some((b) => b.id === pl.id));
   if (ai.detour > 0) ai.detour -= dt;
   else {
-    if (!planOk(ai.plan) || now - ai.plan.at > REPLAN_MS) ai.plan = null;
-    if (bot.ammo < CARRY_MAX && (!ai.plan || ai.plan.kind !== 'ball')) {
+    const canPlan = room.rt.plansLeft == null || room.rt.plansLeft > 0;
+    if (!planOk(ai.plan)) ai.plan = null;
+    else if (canPlan && now - ai.plan.at > REPLAN_MS) ai.plan = null;
+    if (canPlan && !ai.plan && room.rt.plansLeft != null) room.rt.plansLeft--;
+    if (canPlan && bot.ammo < CARRY_MAX && (!ai.plan || ai.plan.kind !== 'ball')) {
       const r = nearestBallPath(nav, bot, room.rt.balls);
       if (r && (bot.ammo === 0 || r.dist < 10)) ai.plan = { kind: 'ball', id: r.ball.id, pts: r.pts, dist: r.dist, at: now };
     }
-    if (!ai.plan) {
+    if (canPlan && !ai.plan) {
       const foe = nearest(bot, others);
       const cx = foe ? foe.o.x : 0, cz = foe ? foe.o.z : 0, a = rng() * TAU, r = 8 + rng() * 6;
       const spot = walkableSpot(nav, cx + Math.cos(a) * r, cz + Math.sin(a) * r);

@@ -2,11 +2,10 @@
 // walls, trees, snowmen and the arena edge block), then bots find routes with A* (or, to choose a snowball, a
 // search that stops at the first one reached, so "nearest" means nearest on foot). Paths are smoothed into a few
 // straight legs. Other players aren't in the grid: bots step round them as they walk (moveStep).
-import { arenaOf } from '../../public/shared/physics.js';
+import { arenaOf, standOk } from '../../public/shared/physics.js';
 
 const CELL = 1;
 const DIAG = Math.SQRT2;
-const MAX_EXPAND = 9000; // give up after looking at this many squares (the big map has ~16,000)
 
 // The walkability grid for a map: the same rules as standOk() (arena edge, walls, trees, snowmen; players don't
 // count), applied by marking each obstacle's own footprint instead of testing every square against every obstacle.
@@ -28,7 +27,31 @@ export function buildNav(map) {
   }
   for (const t of map.trees) { const r = 0.5 * t.s + 0.6; block(t.x, t.z, r, (x, z) => Math.hypot(x - t.x, z - t.z) < r); }
   for (const m of map.snowmen || []) { const r = 0.75 * m.s + 0.55; block(m.x, m.z, r, (x, z) => Math.hypot(x - m.x, z - m.z) < r); }
-  return { map, n, o, walk };
+  // squares within 2 of a blocked one: steps between them get checked against the real collision rules (the line
+  // between two clear square centres can still graze a tree's edge or a turned wall's corner)
+  const near = new Uint8Array(n * n);
+  for (let iz = 0; iz < n; iz++)
+    for (let ix = 0; ix < n; ix++) {
+      if (walk[iz * n + ix]) continue;
+      for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+        const jx = ix + dx, jz = iz + dz;
+        if (jx >= 0 && jz >= 0 && jx < n && jz < n) near[jz * n + jx] = 1;
+      }
+    }
+  // per square and direction (8): 0 not checked yet, 1 the step is clear, 2 it isn't
+  return { map, n, o, walk, near, steps: new Uint8Array(n * n * 8) };
+}
+
+const DIRS = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+// Can someone walk from square i one step in direction d (index into DIRS)? Exact near obstacles, cached both ways.
+function stepClear(nav, i, d, j) {
+  if (!nav.near[i] && !nav.near[j]) return true;
+  const k = i * 8 + d;
+  if (!nav.steps[k]) {
+    const ok = segmentClear(nav, centre(nav, i), centre(nav, j));
+    nav.steps[k] = nav.steps[j * 8 + (7 - d)] = ok ? 1 : 2; // DIRS[7 - d] is the opposite direction
+  }
+  return nav.steps[k] === 1;
 }
 
 // The grid for the room's current map (built on first use, rebuilt if the map changes).
@@ -63,12 +86,19 @@ function walkableNear(nav, x, z) {
   return best;
 }
 
-// Is the straight line from a to b walkable on the grid? (Checked every half square.)
-export function gridClear(nav, a, b) {
-  const d = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(d / (CELL * 0.5)));
+// Can someone walk the straight line from a to b? The same rules as moving does (standOk / pathClear: checked every
+// 0.25 m against walls, trees, snowmen and the arena edge), but only against the obstacles near the line, so it's
+// cheap enough to test every shortcut while smoothing a route. (The grid alone only knows square centres, so a
+// shortcut it allowed could still clip the edge of a tree.)
+export function segmentClear(nav, a, b) {
+  const map = nav.map, pad = 4; // more than any obstacle's reach (a 2.3 m tower's corner plus the 0.55 m margin)
+  const x0 = Math.min(a.x, b.x) - pad, x1 = Math.max(a.x, b.x) + pad, z0 = Math.min(a.z, b.z) - pad, z1 = Math.max(a.z, b.z) + pad;
+  const near = (o) => o.x > x0 - (o.w || 0) && o.x < x1 + (o.w || 0) && o.z > z0 - (o.w || 0) && o.z < z1 + (o.w || 0);
+  const local = { size: map.size, walls: map.walls.filter(near), trees: map.trees.filter(near), snowmen: (map.snowmen || []).filter(near) };
+  const d = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(d / 0.25));
   for (let k = 1; k <= steps; k++) {
     const t = k / steps;
-    if (!nav.walk[cellOf(nav, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)]) return false;
+    if (!standOk(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, local, [])) return false;
   }
   return true;
 }
@@ -83,8 +113,11 @@ function makeHeap() {
       let c = idx.length - 1;
       while (c > 0) { const up = (c - 1) >> 1; if (pri[up] <= pri[c]) break; [idx[up], idx[c]] = [idx[c], idx[up]]; [pri[up], pri[c]] = [pri[c], pri[up]]; c = up; }
     },
+    // the lowest-priority square; its priority is left in `last`
+    last: 0,
     pop() {
-      const top = idx[0], li = idx.pop(), lp = pri.pop();
+      const top = idx[0]; this.last = pri[0];
+      const li = idx.pop(), lp = pri.pop();
       if (idx.length) {
         idx[0] = li; pri[0] = lp;
         let c = 0;
@@ -105,7 +138,7 @@ function makeHeap() {
 // Search from `from` until a square in `goals` (a Map from square to anything) is reached. With `target`, A* towards
 // that one square. Returns { end, cost, prev } or null.
 function search(nav, from, goals, target) {
-  const n = nav.n, cost = new Float32Array(n * n).fill(Infinity), prev = new Int32Array(n * n).fill(-1);
+  const n = nav.n, cost = new Float64Array(n * n).fill(Infinity), prev = new Int32Array(n * n).fill(-1), done = new Uint8Array(n * n);
   const tx = target != null ? target % n : 0, tz = target != null ? Math.floor(target / n) : 0;
   const h = (i) => {
     if (target == null) return 0;
@@ -114,19 +147,20 @@ function search(nav, from, goals, target) {
   };
   const heap = makeHeap();
   cost[from] = 0; heap.push(from, h(from));
-  let expanded = 0;
-  while (heap.size && expanded++ < MAX_EXPAND) {
+  while (heap.size) {
     const i = heap.pop();
+    if (done[i]) continue; // an older, worse entry for a square we've already settled
+    done[i] = 1;
     if (goals.has(i)) return { end: i, cost: cost[i], prev };
     const ix = i % n, iz = Math.floor(i / n);
-    for (let dz = -1; dz <= 1; dz++)
-      for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dz) continue;
+    for (let d = 0; d < 8; d++) {
+        const [dx, dz] = DIRS[d];
         const jx = ix + dx, jz = iz + dz;
         if (jx < 0 || jz < 0 || jx >= n || jz >= n) continue;
         const j = jz * n + jx;
-        if (!nav.walk[j]) continue;
+        if (!nav.walk[j] || done[j]) continue;
         if (dx && dz && (!nav.walk[iz * n + jx] || !nav.walk[jz * n + ix])) continue; // no cutting corners
+        if (!stepClear(nav, i, d, j)) continue;
         const c = cost[i] + (dx && dz ? DIAG : 1) * CELL;
         if (c < cost[j]) { cost[j] = c; prev[j] = i; heap.push(j, c + h(j)); }
       }
@@ -145,7 +179,7 @@ function toPoints(nav, prev, end, start, last) {
   const out = [];
   let anchor = start;
   for (let k = 0; k < pts.length; k++) {
-    if (k + 1 < pts.length && gridClear(nav, anchor, pts[k + 1])) continue;
+    if (k + 1 < pts.length && segmentClear(nav, anchor, pts[k + 1])) continue;
     out.push(pts[k]); anchor = pts[k];
   }
   return out;
@@ -155,7 +189,7 @@ function toPoints(nav, prev, end, start, last) {
 export function findPath(nav, from, to) {
   const a = walkableNear(nav, from.x, from.z), b = walkableNear(nav, to.x, to.z);
   if (a < 0 || b < 0) return null;
-  if (gridClear(nav, from, to)) return { pts: [{ x: to.x, z: to.z }], dist: Math.hypot(to.x - from.x, to.z - from.z) };
+  if (segmentClear(nav, from, to)) return { pts: [{ x: to.x, z: to.z }], dist: Math.hypot(to.x - from.x, to.z - from.z) };
   const r = search(nav, a, new Map([[b, true]]), b);
   return r ? { pts: toPoints(nav, r.prev, r.end, from, { x: to.x, z: to.z }), dist: r.cost } : null;
 }
