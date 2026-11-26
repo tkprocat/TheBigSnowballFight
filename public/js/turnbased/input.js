@@ -44,7 +44,8 @@ export function initInput(act) {
   canvas.addEventListener('pointermove', (e) => {
     if (!drag || !on() || !canControl()) return;
     T.aimYaw -= (e.clientX - drag.x) * 0.005;
-    if (!canMove()) T.aimPitch = clamp(T.aimPitch + (e.clientY - drag.y) * 0.004, PITCH_MIN, PITCH_MAX);
+    // drag up for a higher angle, the same as the mouse in realtime
+    if (!canMove()) T.aimPitch = clamp(T.aimPitch - (e.clientY - drag.y) * 0.004, PITCH_MIN, PITCH_MAX);
     drag.x = e.clientX; drag.y = e.clientY;
   });
   canvas.addEventListener('pointerup', (e) => {

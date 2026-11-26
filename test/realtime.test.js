@@ -26,6 +26,7 @@ function game(n = 2) {
   room.map = EMPTY;
   room.rt.balls = [];
   room.rt.respawns = [];
+  room.rt.goAt = 0; // skip the start countdown
   const [a, b] = room.players;
   a.x = 0; a.z = 0; b.x = 0; b.z = 6;
   for (const p of room.players) p.shieldUntil = 0;
@@ -211,5 +212,31 @@ test('sprinting allows a faster step, but no throwing until you stop', () => {
   act('throw', code, tok[0], { yaw: 0, pitch: 0.4 });
   assert.strictEqual(a.ammo, 1);
   assert.strictEqual(a.sprinting, false);
+  stopTick(room);
+});
+
+test('each realtime round starts with a countdown: you can move, but nobody picks up or throws, and bots wait', () => {
+  const host = actions.create({ name: 'Ann' });
+  act('addBot', host.code, host.token, { count: 2 });
+  act('setMode', host.code, host.token, { mode: 'realtime' });
+  act('start', host.code, host.token);
+  const room = rooms.get(host.code), me = room.players[0], bots = room.players.slice(1);
+  assert.ok(room.rt.goAt > T, 'the countdown is running');
+  const where = bots.map((b) => [b.x, b.z]);
+  room.rt.balls.push({ id: 900, x: me.x + 0.3, z: me.z, n: 1 });
+  me.ammo = 1; me.coolUntil = 0;
+  assert.throws(() => act('throw', host.code, host.token, { yaw: 0, pitch: 0.3 }), /Wait for GO/);
+  me.lastIn = T - 100;
+  const x0 = me.x;
+  act('input', host.code, host.token, { x: me.x + 0.4, z: me.z, yaw: 0, pitch: 0.3 });
+  assert.ok(Math.abs(me.x - (x0 + 0.4)) < 0.01, 'moving into position is allowed');
+  room.rt.balls.find((b) => b.id === 900).x = me.x + 0.3;
+  run(room, 2500);
+  assert.strictEqual(me.ammo, 1, 'no pickups yet');
+  assert.deepStrictEqual(bots.map((b) => [b.x, b.z]), where, 'bots wait');
+  run(room, 1500);
+  assert.ok(T >= room.rt.goAt);
+  assert.strictEqual(me.ammo, 2, 'GO: the snowball at your feet is picked up');
+  act('throw', host.code, host.token, { yaw: 0, pitch: 0.3 });
   stopTick(room);
 });

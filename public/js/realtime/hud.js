@@ -2,11 +2,11 @@
 import { WIN_SCORE } from '../../shared/physics.js';
 import { CARRY_MAX } from '../../shared/realtimeRules.js';
 import { S } from '../common/state.js';
-import { $ } from '../common/dom.js';
+import { $, toast } from '../common/dom.js';
 import { NET } from '../common/net.js';
 import { renderScores, followed, watchHint } from '../common/players.js';
 import { R, me, canPlay } from './state.js';
-import { locked } from './input.js';
+import { locked, lockFailed } from './input.js';
 
 const finePointer = matchMedia('(hover:hover) and (pointer:fine)');
 let lastKey = '';
@@ -33,6 +33,7 @@ export function updateReadout() {
   let main = '';
   if (S.over) main = 'Round over';
   else if (S.watching) main = leader ? leader.name + ' leads' : '';
+  else if (performance.now() < (R.goUntil || 0)) main = 'Get ready…';
   else if (p && performance.now() < (R.splatUntil || 0)) main = 'Splat!';
   else if (R.sprinting) main = 'Sprinting!';
   else if (p && p.ammo === 0) main = 'Pick up snowballs!';
@@ -46,10 +47,16 @@ export function updateReadout() {
   const play = canPlay();
   $('#controls').style.opacity = play ? 1 : 0.45;
   $('#throwBtn').disabled = !play || !p.ammo || R.sprinting;
-  if ($('#throwBtn').textContent !== 'THROW') $('#throwBtn').textContent = 'THROW';
+  if ($('#throwBtn').textContent !== 'THROW') { $('#throwBtn').textContent = 'THROW'; $('#throwBtn').setAttribute('aria-label', 'Throw'); }
+  // the start countdown: 3, 2, 1, GO!
+  const goLeft = (R.goUntil || 0) - performance.now();
+  const count = goLeft > 0 ? Math.ceil(goLeft / 1000) : (goLeft > -700 ? 0 : null);
+  if (count !== R.lastCount) { R.lastCount = count; if (count != null) toast(count > 0 ? String(count) : 'GO!', count > 0 ? 'Get ready: pick up snowballs at GO' : '', count > 0 ? 1100 : 800); }
   const needLock = play && finePointer.matches && !locked();
   $('#lockHint').hidden = !needLock;
-  if (needLock) $('#lockHint').textContent = 'Click to play · WASD run · Shift sprint · mouse aims · click to throw';
+  if (needLock) $('#lockHint').textContent = lockFailed
+    ? 'Mouse lock unavailable: drag to aim · click to throw · WASD run (click again to retry the lock)'
+    : 'Click to play · WASD run · Shift sprint · mouse aims · click to throw';
   $('#hint').hidden = !play || !finePointer.matches || needLock;
   $('#hint').textContent = 'WASD run · Shift sprint (no throwing) · mouse aims (up and down for distance) · click or Space to throw · walk over snowballs to pick them up · Esc frees the mouse';
 }

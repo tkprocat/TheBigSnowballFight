@@ -14,7 +14,7 @@ import { showOver, hideOver } from '../common/over.js';
 import { addFeed, clearFeed } from '../common/feed.js';
 import { R, resetR, me, canPlay } from './state.js';
 import { applySnapshot, interpolate, sendInput } from './net.js';
-import { initInput, runDir, wantSprint, unlock } from './input.js';
+import { initInput, runDir, wantSprint, unlock, requestLock } from './input.js';
 import { renderHUD, updateReadout } from './hud.js';
 
 /* ---------- throwing ---------- */
@@ -86,8 +86,10 @@ function startFlight(e) {
   const thrower = S.byId.get(e.by);
   const sim = simulate({ x: num(e.x), z: num(e.z) }, num(e.yaw), clamp(num(e.pitch), PITCH_MIN, PITCH_MAX), clamp(num(e.power), 0, 1), CALM, [], S.map, 1200, null, 1, RT_SIM);
   const mesh = makeBallMesh(1); mesh.visible = false;
-  R.flights.set(e.n, { sim, t: 0, mesh, thrower, end: null, wait: 0 });
   if (thrower) { if (!thrower.local) thrower.armT = THROW_DURATION; thrower.yaw = num(e.yaw, thrower.yaw); }
+  // the ball leaves the hand at the release point of the throw animation; the flight keeps its own clock for that
+  const windup = thrower ? Math.max(0, thrower.armT - THROW_RELEASE_LEFT) : 0;
+  R.flights.set(e.n, { sim, t: 0, mesh, thrower, end: null, wait: 0, windup });
   sfx.throw();
 }
 
@@ -108,7 +110,7 @@ function land(f) {
 
 function updateFlights(dt) {
   for (const [n, f] of R.flights) {
-    if (f.thrower && f.thrower.armT > THROW_RELEASE_LEFT) { f.mesh.visible = false; continue; } // still winding up
+    if (f.windup > 0) { f.windup -= dt; f.mesh.visible = false; continue; } // still winding up
     f.t += dt;
     const last = f.end ? clamp(Math.floor(num(f.end.steps)), 1, f.sim.n - 1) : f.sim.n - 1;
     const i = Math.min(last, Math.floor(f.t / DT));
@@ -145,7 +147,9 @@ function syncFromView(v) {
   }
   S.players = ordered;
   if (v.rt) applySnapshot(v.rt, () => {}, syncLoose);
-  if (!v.over && S.over) { hideOver(); clearFeed(); } // a new round starts with a clean feed
+  // a new round starts clean: no leftover message, feed, splat, or snowballs still flying from the last round
+  // (one landing after Play again would show the old round's "got you" message)
+  if (!v.over && S.over) { hideOver(); clearFeed(); clearBalls(); R.splatUntil = 0; }
   if (v.over && !S.over) { const w = S.byId.get(v.over.winner); if (w) { unlock(); showOver(w); } }
   renderHUD(true);
 }
@@ -232,6 +236,8 @@ export default {
   },
   onView: syncFromView,
   onFollow() { renderHUD(true); },
+  // Start / Play again was just clicked: lock the mouse now, while the click still counts as a user gesture
+  lockNow() { requestLock(); },
   onEvent(name, d) {
     if (name !== 'rt') return;
     applySnapshot(d, onEvents, syncLoose);
