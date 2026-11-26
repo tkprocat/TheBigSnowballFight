@@ -125,7 +125,7 @@ test('move once per turn, inside your ring, then throw', () => {
   assert.strictEqual(viewFor(room, p).next, p.id, 'with two players, you are next after them');
 });
 
-test('packing a heavy snowball uses your turn and multiplies your next hit; getting hit drops it', () => {
+test('packing a heavy snowball uses your turn and triples your next hit; getting hit drops it', () => {
   const { host, room } = lobby(2);
   act('start', host.code, host.token);
   room.map = { walls: [], trees: [], deco: [] };
@@ -133,14 +133,12 @@ test('packing a heavy snowball uses your turn and multiplies your next hit; gett
   room.cur = 0; room.busyUntil = 0;
   assert.throws(() => act('pack', host.code, b.token), /not your turn/);
   act('pack', host.code, a.token);
-  assert.strictEqual(a.heavy, 2);
-  assert.strictEqual(current(room), b, 'packing ends your turn');
-  assert.deepStrictEqual(room.lastPack, { n: 1, by: a.id, heavy: 2 });
-  room.cur = 0; room.busyUntil = 0; act('pack', host.code, a.token);
   assert.strictEqual(a.heavy, 3);
+  assert.strictEqual(current(room), b, 'packing ends your turn');
+  assert.deepStrictEqual(room.lastPack, { n: 1, by: a.id, heavy: 3 });
   room.cur = 0; room.busyUntil = 0;
-  assert.throws(() => act('pack', host.code, a.token), /as heavy as it gets/);
-  // find a hitting heavy throw: points are multiplied, and the heavy ball is used up
+  assert.throws(() => act('pack', host.code, a.token), /already have a heavy snowball/);
+  // find a hitting heavy throw: points are tripled, and the heavy ball is used up
   let hit = false;
   for (let pw = 0; pw <= 1 && !hit; pw += 0.02) {
     room.cur = 0; room.busyUntil = 0; room.phase = 'aim'; a.heavy = 3; a.score = 0;
@@ -153,7 +151,7 @@ test('packing a heavy snowball uses your turn and multiplies your next hit; gett
   }
   assert.ok(hit);
   // b had packed, then got hit: dropped
-  b.heavy = 2;
+  b.heavy = 3;
   hit = false;
   for (let pw = 0; pw <= 1 && !hit; pw += 0.02) {
     room.cur = 0; room.busyUntil = 0; room.phase = 'aim';

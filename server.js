@@ -7,7 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  TAU, DT, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, HEAVY_MAX, PACK_MS, CHAT_LINES, EMOTES, TURN_LIMIT, MAX_PLAYERS, COLORS, BOT_NAMES,
+  TAU, DT, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, HEAVY_MULT, PACK_MS, CHAT_LINES, EMOTES, TURN_LIMIT, MAX_PLAYERS, COLORS, BOT_NAMES,
   clamp, makeMap, simulate, windFor, spawnPoint, planThrow, throwShowMs, clampMove, standOk, chooseCover,
 } from './public/physics.js';
 
@@ -141,7 +141,7 @@ function botTurn(room, bot) {
 function botAim(room, bot) {
   if (curPlayer(room) !== bot || room.over) return;
   // now and then a bot packs a heavier snowball instead of throwing
-  if (bot.heavy < 2 && rand() < 0.2) { doPack(room, bot); broadcast(room); return; }
+  if ((bot.heavy || 1) === 1 && rand() < 0.2) { doPack(room, bot); broadcast(room); return; }
   const plan = planThrow(bot, room.players.filter((o) => o !== bot), windFor(room.seed, room.turn), room.map, rand, 1, bot.heavy || 1);
   bot.yaw = plan.yaw; bot.pitch = plan.pitch;
   broadcastAim(room, bot);
@@ -188,10 +188,10 @@ function nextTurn(room) {
   startTurn(room);
 }
 
-// Spend the turn packing a heavier snowball: your next hit counts double, then triple.
+// Spend the turn packing a heavy snowball: your next hit counts triple.
 function doPack(room, p) {
-  if ((p.heavy || 1) >= HEAVY_MAX) throw new Error('Your snowball is as heavy as it gets');
-  p.heavy = (p.heavy || 1) + 1;
+  if ((p.heavy || 1) > 1) throw new Error('You already have a heavy snowball. Throw it first');
+  p.heavy = HEAVY_MULT;
   room.lastPack = { n: ++room.packN, by: p.id, heavy: p.heavy };
   room.busyUntil = Date.now() + PACK_MS;
   room.lastActive = Date.now();

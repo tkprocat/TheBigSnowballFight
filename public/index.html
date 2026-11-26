@@ -154,7 +154,7 @@ body.killcam::after{box-shadow:inset 0 11vh 0 0 rgba(10,18,32,.92),inset 0 -11vh
       <div class="row"><button class="btn primary" id="hostBtn" disabled>Create a lobby</button></div>
       <div class="row"><input type="text" id="codeIn" maxlength="4" placeholder="CODE" aria-label="Lobby code"><button class="btn" id="joinBtn" disabled>Join lobby</button></div>
     </div>
-    <p class="keys">Each turn: first walk up to 5 m (arrows or tap the snow, Space to confirm), then aim with ← → and ↑ ↓ and hold Space to throw. Hide from whoever is next. Or skip a throw to pack a heavy snowball: your next hit counts ×2, then ×3 (H). Quick chat with C. On a phone, use the on-screen buttons.</p>
+    <p class="keys">Each turn: first walk up to 5 m (arrows or tap the snow, Space to confirm), then aim with ← → and ↑ ↓ and hold Space to throw. Hide from whoever is next. Or skip a throw to pack a heavy snowball: your next hit counts triple (H). Quick chat with C. On a phone, use the on-screen buttons.</p>
   </div>
 </div>
 
@@ -208,7 +208,7 @@ body.killcam::after{box-shadow:inset 0 11vh 0 0 rgba(10,18,32,.92),inset 0 -11vh
       <div id="meter"><div id="meterFill"></div><div id="meterTicks"></div></div>
     </div>
     <div id="actBox">
-      <button id="packBtn" aria-label="Spend your turn packing a heavier snowball">Pack ×2</button>
+      <button id="packBtn" aria-label="Spend your turn packing a heavy snowball: your next hit counts triple">Pack ×3</button>
       <button id="throwBtn" aria-label="Hold to charge, release to throw">HOLD<br>TO THROW</button>
     </div>
   </div>
@@ -234,7 +234,7 @@ body.killcam::after{box-shadow:inset 0 11vh 0 0 rgba(10,18,32,.92),inset 0 -11vh
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
-import { clamp, lerp, TAU, angDiff, mulberry32, DT, BALL_R, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, HEAVY_MAX, PACK_MS, CHAT_LINES, EMOTES, SLOW_WINDOW, SLOW_SPEED, HOLD_MS, TURN_LIMIT, COLORS, BOT_NAMES, makeMap, simulate, windFor, spawnPoint, planThrow, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover } from './physics.js';
+import { clamp, lerp, TAU, angDiff, mulberry32, DT, BALL_R, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, HEAVY_MAX, HEAVY_MULT, PACK_MS, CHAT_LINES, EMOTES, SLOW_WINDOW, SLOW_SPEED, HOLD_MS, TURN_LIMIT, COLORS, BOT_NAMES, makeMap, simulate, windFor, spawnPoint, planThrow, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover } from './physics.js';
 
 /* =========================================================
    Utilities
@@ -584,13 +584,13 @@ function confirmMove() {
 
 function packNow() {
   const p = curPlayer();
-  if (!canControl() || S.charging || (p.heavy || 1) >= HEAVY_MAX) return;
+  if (!canControl() || S.charging || (p.heavy || 1) > 1) return;
   audio();
   if (S.mode === 'online') {
     S.sending = true;
     api('pack').catch(e => toast(e.message, '', 1600)).finally(() => { S.sending = false; });
   } else {
-    p.heavy = (p.heavy || 1) + 1;
+    p.heavy = HEAVY_MULT;
     showPack(p, p.heavy);
     setTimeout(() => { if (S.mode === 'local' && !S.over) nextLocalTurn(); }, PACK_MS);
   }
@@ -722,7 +722,7 @@ function updateCpu(dt) {
     }
   } else if (c.phase === 'walk') {
     if (c.t <= 0) {
-      if ((p.heavy || 1) < 2 && Math.random() < 0.2) { S.cpu = null; p.heavy = (p.heavy || 1) + 1; showPack(p, p.heavy); setTimeout(() => { if (S.mode === 'local' && !S.over) nextLocalTurn(); }, PACK_MS); return; }
+      if ((p.heavy || 1) === 1 && Math.random() < 0.2) { S.cpu = null; p.heavy = HEAVY_MULT; showPack(p, p.heavy); setTimeout(() => { if (S.mode === 'local' && !S.over) nextLocalTurn(); }, PACK_MS); return; }
       Object.assign(c, cpuPlan(p), { phase: 'aim', t: 1.2 });
     }
   }
@@ -1098,8 +1098,8 @@ function renderHUD() {
 }
 function updatePackBtn() {
   const p = curPlayer(), lvl = p ? (p.heavy || 1) : 1;
-  $('#packBtn').textContent = lvl >= HEAVY_MAX ? 'Max ×' + HEAVY_MAX : 'Pack ×' + (lvl + 1);
-  $('#packBtn').disabled = !canControl() || S.charging || lvl >= HEAVY_MAX;
+  $('#packBtn').textContent = lvl > 1 ? 'Packed ×' + lvl : 'Pack ×' + HEAVY_MULT;
+  $('#packBtn').disabled = !canControl() || S.charging || lvl > 1;
 }
 function renderTurnBanner() {
   const p = curPlayer(); if (!p) { $('#turnMain').textContent = ''; return; }

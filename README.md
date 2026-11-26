@@ -2,7 +2,7 @@
 
 A browser-based, turn-based 3D snowball fight. Each turn, first walk up to 5 m (duck behind a wall, a tree or another player to hide from whoever throws next), then pick a direction and an angle, time the power meter and release. The snowball flies on a ballistic arc pushed by the wind, and the goal is to hit your friends' avatars. A head hit scores 2 points (with a slow-motion critical-hit camera), a body hit 1. Hit someone and they hop to a new spot. First to 10 points wins.
 
-Instead of throwing, you can spend your turn packing a heavy snowball: your next hit counts ×2, or ×3 if you pack twice. Heavy snowballs fly a bit shorter and the wind moves them less, and you drop it if someone hits you first. Quick chat (fixed lines and emotes: wave, dance, cheer) works in the lobby and in the game.
+Instead of throwing, you can spend your turn packing a heavy snowball: your next hit counts triple. You can hold one heavy snowball at a time. Heavy snowballs fly a bit shorter and the wind moves them less, and you drop it if someone hits you first. Quick chat (fixed lines and emotes: wave, dance, cheer) works in the lobby and in the game.
 
 ## Run it
 
@@ -48,7 +48,7 @@ Lobbies live in memory, so a restart ends games in progress.
 | Angle up / down | ↑ ↓ (or W/S), or drag the view | ▲ ▼ |
 | Aim at next friend | Tab | ◎ |
 | Charge and throw | Hold Space, release | Hold the throw button, release |
-| Pack a heavy snowball (uses your turn) | H | Pack ×2 button |
+| Pack a heavy snowball (uses your turn) | H | Pack ×3 button |
 | Quick chat | C | 💬 |
 
 ## How it works

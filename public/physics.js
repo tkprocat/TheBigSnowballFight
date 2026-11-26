@@ -99,9 +99,10 @@ export function spawnPoint(rng, map, others) {
 // Game settings shared by the browser and the server.
 export const WIN_SCORE = 10;     // points needed to win a round
 export const HIT_POINTS = { head: 2, body: 1 };
-// Heavy snowballs: spend a turn packing instead of throwing to multiply your next hit (x2, then x3).
+// Heavy snowballs: spend a turn packing instead of throwing and your next hit counts triple.
+// One pack at a time: two turns for 3x a hit beats two plain throws unless you're likely to be hit first.
 // You drop it if you get hit before you throw it.
-export const HEAVY_MAX = 3, HEAVY_SPEED = 0.88, HEAVY_WIND = 0.5, PACK_MS = 1400;
+export const HEAVY_MAX = 3, HEAVY_MULT = 3, HEAVY_SPEED = 0.88, HEAVY_WIND = 0.5, PACK_MS = 1400;
 // Quick chat: fixed lines and emotes, so there is nothing to moderate.
 export const CHAT_LINES = ['Nice shot!', 'Missed me!', 'Watch this…', 'Oops!', 'Hide!', 'Incoming!', 'So close!', 'GG'];
 export const EMOTES = ['wave', 'dance', 'cheer'];
