@@ -92,7 +92,8 @@ function throwNow() {
 function startCharge() { if (canMove()) { confirmMove(); return; } if (!canControl() || T.charging) return; audio(); T.charging = true; T.chargeT = 0; T.power = 0; $('#throwBtn').classList.add('on'); }
 function releaseCharge() { $('#throwBtn').classList.remove('on'); if (!T.charging) return; if (!canControl()) { T.charging = false; return; } throwNow(); }
 function cancelCharge() { T.charging = false; $('#throwBtn').classList.remove('on'); }
-function nextTarget() { if (canMove()) { const p = curPlayer(); T.moveTo = { x: p.x, z: p.z }; return; } if (!canControl()) return; T.targetIdx++; T.aimYaw = faceTarget(curPlayer(), T.targetIdx); }
+// Tab / ◎: during the move step, stay where you are (and go on to aiming); while aiming, face the next opponent.
+function nextTarget() { if (canMove()) { const p = curPlayer(); T.moveTo = { x: p.x, z: p.z }; confirmMove(); return; } if (!canControl()) return; T.targetIdx++; T.aimYaw = faceTarget(curPlayer(), T.targetIdx); }
 
 initInput({ startCharge, releaseCharge, cancelCharge, nextTarget, packNow });
 
@@ -186,6 +187,7 @@ function syncFromView(v) {
     if (pp && !firstSight) showPack(pp, clamp(Math.floor(num(pk.heavy, 2)), 2, HEAVY_MAX));
   }
   T.turn = Math.floor(num(v.turn));
+  if (!T.busy) T.windTurn = T.turn;
   T.nextId = typeof v.next === 'string' ? v.next : null;
   T.turnDeadline = v.turnLeft == null ? 0 : Date.now() + num(v.turnLeft);
   const ci = S.players.findIndex((p) => p.id === v.cur);
@@ -204,6 +206,7 @@ function showServerThrow(th) {
   const victim = th.hit ? S.byId.get(th.hit) : null;
   if (victim && th.from) { victim.x = num(th.from.x); victim.z = num(th.from.z); victim.hold = true; }
   thrower.x = num(th.x); thrower.z = num(th.z); thrower.yaw = num(th.yaw);
+  T.windTurn = Math.floor(num(th.turn));
   const part = th.part === 'head' ? 'head' : 'body';
   const heavy = clamp(Math.floor(num(th.heavy, 1)), 1, HEAVY_MAX);
   const pts = HIT_POINTS[part] * heavy;
@@ -282,7 +285,7 @@ function updateAvatars(dt, time) {
 const want = new THREE.Vector3(), look = new THREE.Vector3(), tmpV = new THREE.Vector3();
 function updateCamera(dt) {
   // spectators may follow someone else between turns; otherwise the camera is on whoever's turn it is
-  const p = S.watching && !T.flights.length && !T.impactAt && S.follow ? followed() : curPlayer();
+  const p = S.watching && !T.flights.length && !T.impactAt && S.followId ? followed() : curPlayer();
   if (!p) return;
   let k = 3;
   const f = T.flights[0];
@@ -324,9 +327,12 @@ export default {
   enter(v) {
     resetT();
     T.seenN = v.lastThrow ? v.lastThrow.n : 0;
+    T.seenPack = v.lastPack ? num(v.lastPack.n) : 0; // packs from before we arrived aren't shown; every later one is
+    T.windTurn = Math.floor(num(v.turn));
     $('#meter').style.visibility = '';
   },
   onView: syncFromView,
+  onFollow: renderHUD,
   onEvent(name, d) { if (name === 'aim') onAim(d); },
   frame(dt, time) {
     updateAim(dt);

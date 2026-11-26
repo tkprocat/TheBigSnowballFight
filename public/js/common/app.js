@@ -9,7 +9,7 @@ import { $, toast, lsGet, lsSet, safeName } from './dom.js';
 import { NET, api, connect, checkServer, sessGet, leaveOnline } from './net.js';
 import { audio, toggleMute, isMuted } from './audio.js';
 import { canvas, orbitCamera, updateParticles, render } from './scene.js';
-import { clearPlayers, setMap } from './players.js';
+import { clearPlayers, setMap, followNext } from './players.js';
 import { initChat, onSay, toggleChat } from './chat.js';
 import { showLobby, initLobby } from './lobby.js';
 import { hideOver } from './over.js';
@@ -96,7 +96,7 @@ function showGame() {
 function showMenu() {
   if (NET.code) leaveOnline();
   exitGame();
-  S.screen = 'menu'; S.watching = false; document.body.classList.remove('watching');
+  S.screen = 'menu'; S.watching = false; S.followId = null; document.body.classList.remove('watching');
   $('#menu').hidden = false; $('#lobby').hidden = true; $('#game').hidden = true; $('#over').hidden = true; $('#chatPanel').hidden = true; $('#lobbyFeed').textContent = '';
 }
 
@@ -115,7 +115,14 @@ addEventListener('keydown', (e) => {
   if (S.screen !== 'game' || e.target.tagName === 'INPUT') return;
   if (e.code === 'KeyC' && !e.repeat) toggleChat();
   // spectators: Tab follows the next player
-  else if (e.code === 'Tab' && S.watching) { e.preventDefault(); S.follow++; }
+  else if (e.code === 'Tab' && S.watching) { e.preventDefault(); followNext(); }
+});
+// spectators: tap or click a name in the score list to follow that player
+$('#scoreHud').addEventListener('click', (e) => {
+  const row = e.target.closest('.sc');
+  if (!S.watching || !row || !S.byId.has(row.dataset.id)) return;
+  S.followId = row.dataset.id;
+  if (active && active.onFollow) active.onFollow();
 });
 
 (async () => {

@@ -3,7 +3,7 @@ import { windFor, lineBlocked } from '../../shared/physics.js';
 import { S } from '../common/state.js';
 
 export const T = {
-  cur: 0, turn: 0, phase: 'move', nextId: null, turnDeadline: 0, turnKey: '',
+  cur: 0, turn: 0, windTurn: 0, phase: 'move', nextId: null, turnDeadline: 0, turnKey: '',
   aimYaw: 0, aimPitch: 35 * Math.PI / 180, charging: false, chargeT: 0, power: 0, targetIdx: 0,
   held: { l: 0, r: 0, u: 0, d: 0 }, moveTo: { x: 0, z: 0 },
   flights: [], busy: false, impactAt: null, packUntil: 0, sending: false,
@@ -12,7 +12,7 @@ export const T = {
 
 export function resetT() {
   Object.assign(T, {
-    cur: 0, turn: 0, phase: 'move', nextId: null, turnDeadline: 0, turnKey: '', charging: false, chargeT: 0, power: 0, targetIdx: 0,
+    cur: 0, turn: 0, windTurn: 0, phase: 'move', nextId: null, turnDeadline: 0, turnKey: '', charging: false, chargeT: 0, power: 0, targetIdx: 0,
     held: { l: 0, r: 0, u: 0, d: 0 }, flights: [], busy: false, impactAt: null, packUntil: 0, sending: false,
     seenN: 0, seenPack: -1, pendingHits: new Map(),
   });
@@ -20,7 +20,8 @@ export function resetT() {
 
 export const curPlayer = () => S.players[T.cur] || null;
 export const nextPlayer = () => S.byId.get(T.nextId) || null;
-export const currentWind = () => windFor(S.seed, T.turn);
+// The wind on screen: the current turn's, but the thrower's while their snowball is still flying.
+export const currentWind = () => windFor(S.seed, T.windTurn);
 export function canControl() {
   const p = curPlayer();
   return S.screen === 'game' && S.mode === 'turn' && !T.busy && !S.over && !T.sending && performance.now() > T.packUntil && !!p && p.local;

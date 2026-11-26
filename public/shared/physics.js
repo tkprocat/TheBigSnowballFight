@@ -210,19 +210,36 @@ export function throwShowMs(steps, part) {
   return 100 + flight + slow + HOLD_MS[part || 'miss'];
 }
 
-// A computer player's throw: search for the shot that comes closest to a random opponent, then add some error.
+// A computer player's throw: aim at a random opponent and correct the shot a few times from where the simulated
+// ball goes (sideways miss turns the aim, short or long changes the power), for each of three angles; keep the
+// closest. A few dozen simulations instead of a brute-force search, so the server never stalls. Then add error.
 // `rng` returns numbers in [0, 1); `error` scales the miss (0 = perfect).
 export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1, heavy = 1) {
   if (!opponents.length) return { yaw: Math.atan2(-p.x, -p.z), pitch: 0.6, power: 0.5 };
   const tgt = opponents[Math.floor(rng() * opponents.length)];
-  const base = Math.atan2(tgt.x - p.x, tgt.z - p.z);
+  const base = Math.atan2(tgt.x - p.x, tgt.z - p.z), dist = Math.hypot(tgt.x - p.x, tgt.z - p.z);
+  const targets = [{ id: 'tgt', x: tgt.x, z: tgt.z }];
   let best = { d: Infinity, yaw: base, pitch: 0.6, power: 0.5 };
   for (const pitch of [0.35, 0.6, 0.85]) {
-    for (let dy = -0.36; dy <= 0.361; dy += 0.04) {
-      for (let pw = 0.02; pw <= 1; pw += 0.04) {
-        const s = simulate(p, base + dy, pitch, pw, wind, [{ id: 'tgt', x: tgt.x, z: tgt.z }], map, 900, tgt, heavy);
-        const d = s.hit ? 0 : s.best;
-        if (d < best.d) best = { d, yaw: base + dy, pitch, power: pw };
+    let yaw = base, power = 0.5, step = 0.25, lastShort = null;
+    for (let it = 0; it < 12; it++) {
+      const s = simulate(p, yaw, pitch, power, wind, targets, map, 900, tgt, heavy);
+      const d = s.hit ? 0 : s.best;
+      if (d < best.d) best = { d, yaw, pitch, power };
+      if (s.hit) break;
+      // where the ball is as it passes the target's distance (or where it stopped, if it fell short)
+      let k = s.n - 1;
+      for (let i = 1; i < s.n; i++) if (Math.hypot(s.pts[i * 3] - p.x, s.pts[i * 3 + 2] - p.z) >= dist) { k = i; break; }
+      const bx = s.pts[k * 3] - p.x, bz = s.pts[k * 3 + 2] - p.z, by = s.pts[k * 3 + 1];
+      const reached = Math.hypot(bx, bz) >= dist - 0.01;
+      yaw += angDiff(Math.atan2(bx, bz), base);                    // turn the miss sideways back onto the target
+      const short = !reached || by < 0.6;                          // fell short, or reached it below the knees
+      const long = reached && by > 1.9;                            // went over its head
+      if (!short && !long) step *= 0.5;                            // at the right height: just fine-tune the aim
+      else {
+        if (lastShort !== null && lastShort !== short) step *= 0.5; // overshot the other way: smaller steps (bisection)
+        power = clamp(power + (short ? step : -step), 0.02, 1);
+        lastShort = short;
       }
     }
   }

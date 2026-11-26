@@ -247,3 +247,33 @@ test('snowmen block throws and you cannot stand in one', () => {
   assert.ok(!standOk(0, 4.3, map, []));
   assert.ok(lineBlocked({ x: 0, z: 0 }, { x: 0, z: 8 }, map, []), 'hiding behind a snowman works');
 });
+
+test('the turn-based bot planner is quick and still finds the shot (it runs on the server between frames)', () => {
+  let hits = 0;
+  const t = performance.now();
+  for (let seed = 1; seed <= 40; seed++) {
+    const map = makeMap(seed), rng = mulberry32(seed);
+    const me = spawnPoint(rng, map, []), o = spawnPoint(rng, map, [me]);
+    const tgt = { id: 'a', x: o.x, z: o.z }, wind = windFor(seed, seed % 7);
+    const plan = planThrow(me, [tgt], wind, map, rng, 0);
+    if (simulate(me, plan.yaw, plan.pitch, plan.power, wind, [tgt], map).hit) hits++;
+  }
+  const ms = (performance.now() - t) / 40;
+  assert.ok(hits >= 34, `a perfect bot hits most open shots (${hits}/40)`);
+  assert.ok(ms < 40, `about ${ms.toFixed(1)} ms per plan`);
+});
+
+test('running into a wall at an angle slides along it, whatever way the wall is turned', () => {
+  for (const ry of [0, 0.6, 1.1, 2.3]) {
+    const map = { ...EMPTY, walls: [{ x: 0, z: 0, w: 8, h: 1.2, d: 0.7, ry }] };
+    // stand just off the wall's face and push into it at 45° to its length
+    const c = Math.cos(ry), s = Math.sin(ry), nx = -s, nz = c; // the wall's length runs along (c, s); its face normal is (-s, c)
+    let p = { x: nx * 1.0, z: nz * 1.0 };
+    const start = { ...p };
+    const dir = { x: (-nx + c) / Math.SQRT2, z: (-nz + s) / Math.SQRT2 };
+    for (let i = 0; i < 30; i++) p = moveStep(p, dir.x, dir.z, 1 / 30, map);
+    const along = (p.x - start.x) * c + (p.z - start.z) * s;
+    assert.ok(along > 1.5, `slid ${along.toFixed(2)} m along a wall turned ${ry}`);
+    assert.ok(standOk(p.x, p.z, map, []));
+  }
+});
