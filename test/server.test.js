@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 process.env.BOT_DELAY_MS = '0';
 const { actions, rooms, findMember, viewFor, cleanName } = await import('../server.js');
+const { HIT_POINTS } = await import('../public/physics.js');
 
 const act = (name, code, token, body = {}) => {
   const { room, member } = findMember(code, token);
@@ -122,6 +123,63 @@ test('move once per turn, inside your ring, then throw', () => {
   act('throw', host.code, p.token, { yaw: 0, pitch: 0.5, power: 0.3 });
   assert.strictEqual(room.phase, 'move', 'next player starts by moving');
   assert.strictEqual(viewFor(room, p).next, p.id, 'with two players, you are next after them');
+});
+
+test('packing a heavy snowball uses your turn and multiplies your next hit; getting hit drops it', () => {
+  const { host, room } = lobby(2);
+  act('start', host.code, host.token);
+  room.map = { walls: [], trees: [], deco: [] };
+  const [a, b] = room.players;
+  room.cur = 0; room.busyUntil = 0;
+  assert.throws(() => act('pack', host.code, b.token), /not your turn/);
+  act('pack', host.code, a.token);
+  assert.strictEqual(a.heavy, 2);
+  assert.strictEqual(current(room), b, 'packing ends your turn');
+  assert.deepStrictEqual(room.lastPack, { n: 1, by: a.id, heavy: 2 });
+  room.cur = 0; room.busyUntil = 0; act('pack', host.code, a.token);
+  assert.strictEqual(a.heavy, 3);
+  room.cur = 0; room.busyUntil = 0;
+  assert.throws(() => act('pack', host.code, a.token), /as heavy as it gets/);
+  // find a hitting heavy throw: points are multiplied, and the heavy ball is used up
+  let hit = false;
+  for (let pw = 0; pw <= 1 && !hit; pw += 0.02) {
+    room.cur = 0; room.busyUntil = 0; room.phase = 'aim'; a.heavy = 3; a.score = 0;
+    b.x = a.x; b.z = a.z + 3;
+    act('throw', host.code, a.token, { yaw: 0, pitch: 0.25, power: pw });
+    hit = room.lastThrow.hit === b.id;
+    assert.strictEqual(room.lastThrow.heavy, 3);
+    assert.strictEqual(a.heavy, 1, 'used up');
+    if (hit) assert.strictEqual(a.score, HIT_POINTS[room.lastThrow.part] * 3);
+  }
+  assert.ok(hit);
+  // b had packed, then got hit: dropped
+  b.heavy = 2;
+  hit = false;
+  for (let pw = 0; pw <= 1 && !hit; pw += 0.02) {
+    room.cur = 0; room.busyUntil = 0; room.phase = 'aim';
+    b.x = a.x; b.z = a.z + 3;
+    act('throw', host.code, a.token, { yaw: 0, pitch: 0.25, power: pw });
+    hit = room.lastThrow.hit === b.id;
+  }
+  assert.ok(hit);
+  assert.strictEqual(b.heavy, 1, 'dropped when hit');
+});
+
+test('quick chat only sends the fixed lines and emotes, and is rate limited', () => {
+  const { host, others, room } = lobby(2);
+  const res = { lines: [], write(x) { this.lines.push(x); }, end() {} };
+  room.players[1].clients.add(res);
+  act('say', host.code, host.token, { line: 0 });
+  act('say', host.code, host.token, { emote: 'dance' });
+  assert.match(res.lines.join(''), /event: say\ndata: \{"id":"[0-9a-f]+","line":0\}/);
+  assert.match(res.lines.join(''), /"emote":"dance"/);
+  assert.throws(() => act('say', host.code, host.token, { line: 99 }), /Unknown/);
+  assert.throws(() => act('say', host.code, host.token, { emote: '<script>' }), /Unknown/);
+  assert.throws(() => act('say', host.code, host.token, { line: '1' }), /Unknown/);
+  act('say', host.code, host.token, { line: 1 });
+  act('say', host.code, host.token, { line: 2 });
+  assert.throws(() => act('say', host.code, host.token, { line: 3 }), /Slow down/);
+  void others;
 });
 
 test('views show positions and scores, never tokens', () => {

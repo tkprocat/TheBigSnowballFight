@@ -47,8 +47,10 @@ export function obstacleHit(x, y, z, map) {
 export function launchPoint(from, yaw) { return { x: from.x + Math.sin(yaw) * 0.45, y: 1.75, z: from.z + Math.cos(yaw) * 0.45 }; }
 
 /* simulate: returns sampled path + what it hit. targets = [{id,x,z}] */
-export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps = 1200, probe = null) {
-  const v = SPEED_MIN + clamp(power, 0, 1) * (SPEED_MAX - SPEED_MIN);
+// `heavy` is the packed snowball's multiplier (1 = normal): heavier balls fly a little slower and the wind moves them less.
+export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps = 1200, probe = null, heavy = 1) {
+  const v = (SPEED_MIN + clamp(power, 0, 1) * (SPEED_MAX - SPEED_MIN)) * (heavy > 1 ? HEAVY_SPEED : 1);
+  const wk = heavy > 1 ? HEAVY_WIND : 1;
   const p = launchPoint(from, yaw);
   let x = p.x, y = p.y, z = p.z;
   let vx = Math.sin(yaw) * Math.cos(pitch) * v, vy = Math.sin(pitch) * v, vz = Math.cos(yaw) * Math.cos(pitch) * v;
@@ -56,7 +58,7 @@ export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps =
   pts[0] = x; pts[1] = y; pts[2] = z;
   let n = 1, hit = null, part = null, kind = 'out', best = Infinity;
   for (let i = 0; i < maxSteps; i++) {
-    vx += wind.x * DT; vz += wind.z * DT; vy -= GRAV * DT;
+    vx += wind.x * wk * DT; vz += wind.z * wk * DT; vy -= GRAV * DT;
     vx *= 0.9995; vz *= 0.9995; vy *= 0.9995;
     x += vx * DT; y += vy * DT; z += vz * DT;
     pts[n * 3] = x; pts[n * 3 + 1] = y; pts[n * 3 + 2] = z; n++;
@@ -97,6 +99,12 @@ export function spawnPoint(rng, map, others) {
 // Game settings shared by the browser and the server.
 export const WIN_SCORE = 10;     // points needed to win a round
 export const HIT_POINTS = { head: 2, body: 1 };
+// Heavy snowballs: spend a turn packing instead of throwing to multiply your next hit (x2, then x3).
+// You drop it if you get hit before you throw it.
+export const HEAVY_MAX = 3, HEAVY_SPEED = 0.88, HEAVY_WIND = 0.5, PACK_MS = 1400;
+// Quick chat: fixed lines and emotes, so there is nothing to moderate.
+export const CHAT_LINES = ['Nice shot!', 'Missed me!', 'Watch this…', 'Oops!', 'Hide!', 'Incoming!', 'So close!', 'GG'];
+export const EMOTES = ['wave', 'dance', 'cheer'];
 export const TURN_LIMIT = 30;    // seconds per turn before a throw is made for you
 export const MAX_PLAYERS = 8;
 export const COLORS = ['#e2434b', '#2f7de1', '#f2a20c', '#2bb673', '#9b5de5', '#ff6fa3', '#14b8c4', '#8a5a2b'];
@@ -114,7 +122,7 @@ export function throwShowMs(steps, part) {
 
 // A computer player's throw: search for the shot that comes closest to a random opponent, then add some error.
 // `rng` returns numbers in [0, 1); `error` scales the miss (0 = perfect).
-export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1) {
+export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1, heavy = 1) {
   if (!opponents.length) return { yaw: Math.atan2(-p.x, -p.z), pitch: 0.6, power: 0.5 };
   const tgt = opponents[Math.floor(rng() * opponents.length)];
   const base = Math.atan2(tgt.x - p.x, tgt.z - p.z);
@@ -122,7 +130,7 @@ export function planThrow(p, opponents, wind, map, rng = Math.random, error = 1)
   for (const pitch of [0.35, 0.6, 0.85]) {
     for (let dy = -0.36; dy <= 0.361; dy += 0.04) {
       for (let pw = 0.02; pw <= 1; pw += 0.04) {
-        const s = simulate(p, base + dy, pitch, pw, wind, [{ id: 'tgt', x: tgt.x, z: tgt.z }], map, 900, tgt);
+        const s = simulate(p, base + dy, pitch, pw, wind, [{ id: 'tgt', x: tgt.x, z: tgt.z }], map, 900, tgt, heavy);
         const d = s.hit ? 0 : s.best;
         if (d < best.d) best = { d, yaw: base + dy, pitch, power: pw };
       }

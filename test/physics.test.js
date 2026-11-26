@@ -139,3 +139,13 @@ test('a computer player walks to cover from the next thrower when it can', () =>
   assert.ok(standOk(spot.x, spot.z, map, [jack]));
   assert.ok(lineBlocked(jack, spot, map, []), 'hidden behind the wall');
 });
+
+test('a heavy snowball flies a bit shorter and the wind moves it less', () => {
+  const wind = { x: 2, z: 0 };
+  const normal = simulate({ x: 0, z: 0 }, 0, 0.6, 0.8, wind, [], EMPTY);
+  const heavy = simulate({ x: 0, z: 0 }, 0, 0.6, 0.8, wind, [], EMPTY, 1200, null, 2);
+  assert.ok(heavy.end.z < normal.end.z, 'shorter');
+  assert.ok(Math.abs(heavy.end.x) < Math.abs(normal.end.x) * 0.6, 'less drift');
+  const again = simulate({ x: 0, z: 0 }, 0, 0.6, 0.8, wind, [], EMPTY, 1200, null, 2);
+  assert.strictEqual(again.n, heavy.n, 'still deterministic');
+});
