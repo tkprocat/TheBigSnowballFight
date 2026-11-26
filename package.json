@@ -1,7 +1,7 @@
 {
   "name": "the-big-snowball-fight",
   "version": "1.0.0",
-  "description": "A turn-based 3D snowball fight in the browser: aim, time your power, mind the wind. Lobbies with codes, bots, and pass-the-device play.",
+  "description": "A 3D snowball fight in the browser, turn-based or realtime. Lobbies with codes, bots and spectators.",
   "type": "module",
   "main": "server.js",
   "private": true,

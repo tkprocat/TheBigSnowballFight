@@ -4,7 +4,7 @@ import assert from 'node:assert';
 import {
   simulate, windFor, makeMap, spawnPoint, planThrow, obstacleHit, mulberry32, throwShowMs,
   BALL_R, PITCH_MIN, PITCH_MAX, ARENA, HIT_POINTS, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover,
-} from '../public/physics.js';
+} from '../public/shared/physics.js';
 
 const EMPTY = { walls: [], trees: [], deco: [] };
 const CALM = { x: 0, z: 0 };
@@ -148,4 +148,98 @@ test('a heavy snowball flies a bit shorter and the wind moves it less', () => {
   assert.ok(Math.abs(heavy.end.x) < Math.abs(normal.end.x) * 0.6, 'less drift');
   const again = simulate({ x: 0, z: 0 }, 0, 0.6, 0.8, wind, [], EMPTY, 1200, null, 2);
   assert.strictEqual(again.n, heavy.n, 'still deterministic');
+});
+
+// ---------- realtime rules (public/shared/realtimeRules.js) ----------
+import { newBall, stepBall, moveStep, canStep, pathClear, botAim, ballSpot, ballsOnMap, RUN_SPEED, SPRINT_SPEED, THROW_POWER } from '../public/shared/realtimeRules.js';
+
+test('a realtime snowball follows exactly the path simulate() draws', () => {
+  const map = makeMap(99);
+  const from = { x: 2, z: -3 };
+  const sim = simulate(from, 0.7, 0.5, 0.6, CALM, [], map);
+  const b = newBall(1, 'a', from, 0.7, 0.5, 0.6);
+  let res = null, guard = 0;
+  while (!res && guard++ < 1000) res = stepBall(b, 1 / 30, map, []);
+  assert.strictEqual(b.steps, sim.n - 1);
+  assert.strictEqual(res.kind, sim.kind);
+  assert.ok(Math.abs(b.x - sim.end.x) < 1e-4 && Math.abs(b.z - sim.end.z) < 1e-4, "same end (simulate keeps float32 points)");
+});
+
+test('a realtime snowball hits whoever stands in its way at that moment', () => {
+  const b = newBall(1, 'a', { x: 0, z: 0 }, 0, 0.1, 0.4);
+  let res = null;
+  while (!res) res = stepBall(b, 1 / 30, EMPTY, [{ id: 'bob', x: 0, z: 5 }]);
+  assert.strictEqual(res.hit, 'bob');
+  assert.ok(res.part === 'head' || res.part === 'body');
+});
+
+test('running slides along walls and never ends up inside one', () => {
+  const map = { walls: [{ x: 0, z: 2, w: 6, h: 1.5, d: 0.7, ry: 0 }], trees: [], deco: [] };
+  let p = { x: 0, z: 0 };
+  for (let i = 0; i < 60; i++) p = moveStep(p, 0.7, 0.7, 1 / 30, map); // into the wall at an angle
+  assert.ok(p.x > 1, 'slid sideways');
+  assert.ok(standOk(p.x, p.z, map, []));
+  const one = moveStep({ x: 10, z: 10 }, 1, 0, 0.5, EMPTY);
+  assert.ok(Math.abs(one.x - 10 - RUN_SPEED * 0.5) < 1e-9, 'runs at RUN_SPEED');
+  const fast = moveStep({ x: 10, z: 10 }, 1, 0, 0.5, EMPTY, [], SPRINT_SPEED);
+  assert.ok(Math.abs(fast.x - 10 - SPRINT_SPEED * 0.5) < 1e-9, 'sprints at SPRINT_SPEED');
+  assert.ok(ballsOnMap(2, { size: 60 }) >= 15 && ballsOnMap(16, { size: 60 }) > ballsOnMap(2, { size: 60 }), 'plenty of snowballs on the big map');
+  assert.ok(pathClear({ x: 10, z: 0 }, { x: 10, z: 6 }, map));
+  assert.ok(!pathClear({ x: 0, z: 0 }, { x: 0, z: 5 }, map), 'a straight line through the wall is not');
+});
+
+test('players block each other, but two who overlap can walk apart', () => {
+  assert.ok(!canStep({ x: 0, z: 0 }, { x: 0, z: 0.5 }, EMPTY, [{ x: 0, z: 1 }]));
+  assert.ok(canStep({ x: 0, z: 0.5 }, { x: 0, z: 0.3 }, EMPTY, [{ x: 0, z: 1 }]));
+});
+
+test('a perfect realtime bot hits a still target at the fixed throw speed; loose snowballs land on open snow', () => {
+  const me = { x: 0, z: 0 };
+  for (const t of [{ x: 0, z: 6 }, { x: 8, z: 9 }, { x: -15, z: 5 }, { x: 4, z: -22 }]) {
+    const plan = botAim(me, t, EMPTY, mulberry32(1), 0);
+    const s = simulate(me, plan.yaw, plan.pitch, THROW_POWER, CALM, [{ id: 't', x: t.x, z: t.z }], EMPTY);
+    assert.strictEqual(s.hit, 't', `target at ${t.x},${t.z}`);
+  }
+  const map = makeMap(5), rng = mulberry32(8), balls = [];
+  for (let i = 0; i < 10; i++) balls.push(ballSpot(rng, map, [], balls));
+  for (const b of balls) assert.ok(standOk(b.x, b.z, map, []));
+});
+
+// ---------- the large realtime map ----------
+import { ARENA_LARGE, MAX_PLAYERS, COLORS, BOT_NAMES } from '../public/shared/physics.js';
+
+test('the realtime map is big, has forts with walk-through gates, and is the same for everyone', () => {
+  const m = makeMap(4242, 'large');
+  assert.strictEqual(m.size, ARENA_LARGE);
+  assert.deepStrictEqual(makeMap(4242, 'large'), m, 'same seed, same map');
+  assert.strictEqual(m.forts.length, 4);
+  assert.strictEqual(m.walls.filter((w) => w.kind === 'tower').length, 16);
+  assert.ok(m.walls.filter((w) => !w.kind).length >= 30, 'plenty of loose walls');
+  assert.ok(m.trees.length >= 35 && m.snowmen.length >= 10);
+  // you can walk into the central fort through a gate: the gate's middle is standable, the wall beside it is not
+  const f = m.forts[0], c = Math.cos(f.rot), s = Math.sin(f.rot);
+  const at = (lx, lz) => ({ x: lx * c - lz * s, z: lx * s + lz * c });
+  const gate = at(0, f.half), wall = at(3.5, f.half);
+  assert.ok(standOk(gate.x, gate.z, m, []), 'gate is open');
+  assert.ok(!standOk(wall.x, wall.z, m, []), 'wall is solid');
+  assert.ok(standOk(0, 0, m, []), 'room inside');
+  // 16 players fit, apart from each other
+  const rng = mulberry32(1), placed = [];
+  for (let i = 0; i < 16; i++) placed.push(spawnPoint(rng, m, placed));
+  for (const p of placed) assert.ok(standOk(p.x, p.z, m, []) && Math.hypot(p.x, p.z) <= ARENA_LARGE);
+  assert.ok(standOk(ARENA_LARGE - 3, 0, { ...EMPTY, size: ARENA_LARGE }, []), 'the big arena reaches further');
+  assert.ok(!standOk(ARENA_LARGE - 3, 0, EMPTY, []), 'than the turn-based one');
+  assert.strictEqual(MAX_PLAYERS, 16);
+  assert.strictEqual(new Set(COLORS).size, 16);
+  assert.strictEqual(new Set(BOT_NAMES).size, 16);
+});
+
+test('snowmen block throws and you cannot stand in one', () => {
+  const map = { ...EMPTY, snowmen: [{ x: 0, z: 4, s: 1 }] };
+  assert.strictEqual(obstacleHit(0, 1.35, 4, map), 'snowman');
+  assert.strictEqual(obstacleHit(0, 3, 4, map), null, 'over its hat');
+  const sim = simulate({ x: 0, z: 0 }, 0, 0.1, 0.4, CALM, [{ id: 'bob', x: 0, z: 8 }], map);
+  assert.strictEqual(sim.kind, 'snowman');
+  assert.ok(!standOk(0, 4.3, map, []));
+  assert.ok(lineBlocked({ x: 0, z: 0 }, { x: 0, z: 8 }, map, []), 'hiding behind a snowman works');
 });

@@ -1,8 +1,11 @@
 # The Big Snowball Fight
 
-A browser-based, turn-based 3D snowball fight. Each turn, first walk up to 5 m (duck behind a wall, a tree or another player to hide from whoever throws next), then pick a direction and an angle, time the power meter and release. The snowball flies on a ballistic arc pushed by the wind, and the goal is to hit your friends' avatars. A head hit scores 2 points (with a slow-motion critical-hit camera), a body hit 1. Hit someone and they hop to a new spot. First to 10 points wins.
+A browser-based 3D snowball fight for 2 to 16 players, in two modes the host picks in the lobby. Head hits score 2 points, body hits 1, and the first to 10 wins.
 
-Instead of throwing, you can spend your turn packing a heavy snowball: your next hit counts triple. You can hold one heavy snowball at a time. Heavy snowballs fly a bit shorter and the wind moves them less, and you drop it if someone hits you first. Quick chat (fixed lines and emotes: wave, dance, cheer) works in the lobby and in the game.
+- **Turn-based:** one player at a time. Hit someone and they hop to a new spot. First walk up to 5 m (duck behind a wall, a tree or another player to hide from whoever throws next), then pick a direction and an angle, time the power meter and release. The snowball flies on a ballistic arc pushed by the wind. Head hits get a slow-motion critical-hit camera. Instead of throwing, you can spend your turn packing a heavy snowball: your next hit counts triple. You can hold one at a time, it flies a bit shorter, the wind moves it less, and you drop it if someone hits you first.
+- **Realtime:** everyone at once, on a map four times the size, built for up to 16 players: a fort in the middle with corner towers and a gate on each side, three smaller outposts around it, loose walls and corners, trees and snowmen to hide behind. Run around, pick snowballs up off the snow (walk over one with a gold ring; you can carry 3 and start with none), and throw whenever you like. Picked-up snowballs come back somewhere else after 3 seconds. Hold Shift to sprint, 60% faster, but while you sprint you can't aim or throw. Getting hit doesn't move you: you stay where you are, protected for a moment (you flicker while it lasts). No power meter (every throw goes at the same speed, so you only aim), no wind and no heavy snowballs.
+
+Quick chat (fixed lines and emotes: wave, dance, cheer) works in the lobby and in the game.
 
 ## Run it
 
@@ -36,10 +39,13 @@ Lobbies live in memory, so a restart ends games in progress.
 
 ## Playing
 
-- **Online:** press **Create a lobby** and send friends the 4-letter code or the invite link (`?room=CODE`). The host can add computer players and starts the game. Friends can also join a game that's already going. Each turn has a 30 second limit; if time runs out, the game throws for you.
-- **On one device:** add friends (pass the device) and/or computer players on the start screen.
+Press **Create a lobby** and send friends the 4-letter code or the invite link (`?room=CODE`). The host picks the mode, can add computer players, and starts the game. Friends can join a game that's already going. Playing alone? Create a lobby and add computer players.
 
-### Controls
+Anyone in the lobby can press **Watch instead** to give up their seat and spectate (Tab follows the next player). The host stays host while watching, so for testing you can watch bots play each other. Someone joining a full room (16 seated players) becomes a spectator.
+
+In turn-based, each turn has a 30 second limit; if time runs out, the game throws for you. Your direction and angle stay where you left them after each throw, and a dark mark on the power meter shows your last power.
+
+### Turn-based controls
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
@@ -51,14 +57,30 @@ Lobbies live in memory, so a restart ends games in progress.
 | Pack a heavy snowball (uses your turn) | H | Pack ×3 button |
 | Quick chat | C | 💬 |
 
-Your direction and angle stay where you left them after each throw, and a dark mark on the power meter shows your last power, so you can adjust from your previous shot.
+### Realtime controls
+
+| Action | Keyboard and mouse | Touch |
+| --- | --- | --- |
+| Start (locks the mouse) | Click the view; Esc frees the mouse | |
+| Run | WASD (or arrows) | The stick bottom left |
+| Sprint (no aiming or throwing) | Hold Shift | Push the stick all the way to its edge |
+| Aim (direction, and angle for distance) | Move the mouse | Drag the view |
+| Throw | Click (or Space) | Tap the throw button |
+| Pick up a snowball | Walk over it | Walk over it |
+| Quick chat | C | 💬 |
+
+Every realtime throw goes at the same speed, so there is no power meter: the angle alone sets how far it goes (about 30 m at most). The dotted arc and the ring on the snow show where your throw would land.
 
 ## How it works
 
-- `public/physics.js` holds the game rules and physics (fixed 1/120 s steps, gravity, wind, trees, snow walls, spawn points, the computer player's aim). It is shared by the browser and the server.
-- `server.js` runs lobbies. Clients send actions to `POST /api/<action>` and get room updates over Server-Sent Events from `GET /events`. The server is the authority: it checks whose turn it is, keeps moves inside the 5 m ring and out of walls and trees, simulates each throw, decides hits and scores, moves hit players, runs bots and the turn timer.
-- `public/index.html` is the Three.js client. It replays each throw the server reports (same inputs, same physics, cut at the server's step count) and shows the server's result.
-- Wind comes from the lobby's seed and the turn number, so everyone sees the same wind.
+- `public/shared/physics.js` holds the game rules and physics (fixed 1/120 s steps, gravity, wind, trees, snow walls, snowmen, the two maps (the large realtime one with its forts), spawn points, hit tests, the turn-based computer player's aim). `public/shared/realtimeRules.js` adds the realtime rules: running and sliding along walls, loose snowballs, stepping a snowball in flight, and the realtime bots' aim. Both are shared by the browser and the server.
+- `server.js` runs lobbies (modes, bots, spectators, chat). Clients send actions to `POST /api/<action>` and get room updates over Server-Sent Events from `GET /events`. `rooms.js` holds what both modes share (members, views, sending updates).
+- `modes/turnbased/` is the turn-based game on the server: whose turn it is, keeping moves inside the 5 m ring and out of walls and trees, simulating each throw, scores, the turn timer, and the bots (`bots.js`).
+- `modes/realtime/` is the realtime game on the server, a 30-per-second tick that sends positions 15 times a second. The server is the authority on everything that scores, to make cheating hard: it owns snowball counts, pickups, the throw cooldown, scores and protection after a hit, and it steps every snowball in flight against where players stand right now and decides each hit. Browsers report where they are (refused if faster than running or through a wall, and the player snaps back) and ask to throw: a throw carries only a direction (every throw goes at the same speed) and starts from where the server has you. Bots (`bots.js`) pick up, look for someone in sight, and throw through the same checks. Bots pause while nobody has the room open.
+- `public/index.html` and `style.css` are the page; `public/js/` is the Three.js client as plain ES modules (no build step):
+  - `common/`: `app.js` (entry: menu, connecting, handing the game to the room's mode), `scene.js` (3D scene and avatars), `players.js` (players in the scene, name tags, scores), `lobby.js`, `chat.js`, `net.js`, `audio.js`, `over.js`, `dom.js`
+  - `turnbased/`: replays each throw the server reports (same inputs, same physics, cut at the server's step count) and shows the server's result. Wind comes from the lobby's seed and the turn number, so everyone sees the same wind.
+  - `realtime/`: predicts your own running, smooths everyone else between server updates, replays snowballs from the server's throws and lands them where the server says.
 
 ## Tests
 
