@@ -7,8 +7,9 @@ export function lsGet(k, d) { try { const v = localStorage.getItem(k); return v 
 export function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 
 let toastTimer = null;
-export function toast(main, sub = '', ms = 1600) {
-  const t = $('#toast'); t.textContent = main;
+// `small`: a quieter toast higher up, for chat lines and notices.
+export function toast(main, sub = '', ms = 1600, small = false) {
+  const t = $('#toast'); t.textContent = main; t.classList.toggle('small', small);
   if (sub) { const s = document.createElement('small'); s.textContent = sub; t.appendChild(s); }
   t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
 }

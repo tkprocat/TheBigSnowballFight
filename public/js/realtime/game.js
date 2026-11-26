@@ -190,12 +190,13 @@ function updateAvatars(dt, time) {
 // Your aim: the arc your throw would take, and a ring where it would come down.
 function updatePreview() {
   const p = me();
-  if (!p || !canPlay() || !p.ammo || R.sprinting) { preview.visible = marker.visible = false; return; }
+  if (!p || !canPlay() || !p.ammo || R.sprinting) { preview.visible = marker.visible = false; R.landsAt = null; return; }
   const sim = simulate(p, R.yaw, R.pitch, THROW_POWER, CALM, [], S.map, 1200, null, 1, RT_SIM);
   showPreview(sim, true);
   marker.visible = true;
   marker.position.set(sim.end.x, Math.max(0, sim.end.y - 0.15), sim.end.z);
   markerMat.color.set(0xffc83a);
+  R.landsAt = Math.hypot(sim.end.x - p.x, sim.end.z - p.z);
 }
 
 const want = new THREE.Vector3(), look = new THREE.Vector3(), ahead = new THREE.Vector3();
