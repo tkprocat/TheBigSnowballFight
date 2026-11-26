@@ -89,6 +89,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 #readout{display:flex;justify-content:space-between;color:#fff;font-weight:900;font-size:.85rem;text-shadow:0 1px 4px rgba(20,35,61,.7);font-variant-numeric:tabular-nums}
 #meter{height:22px;border-radius:999px;background:rgba(20,35,61,.35);position:relative;overflow:hidden;box-shadow:inset 0 0 0 3px rgba(255,255,255,.7)}
 #meterFill{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,#7fd3ff,#ffc83a 60%,#e2434b);border-radius:999px}
+#meterLast{position:absolute;top:3px;bottom:3px;width:4px;margin-left:-2px;background:#14233d;border-radius:2px;box-shadow:0 0 0 2px #fff}
 #meterTicks{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(10% - 2px),rgba(255,255,255,.55) calc(10% - 2px) 10%)}
 #throwBtn{width:96px;height:96px;border-radius:50%;border:0;background:radial-gradient(circle at 35% 30%,#fff,#dfeefa 55%,#b9d3e8);box-shadow:0 6px 0 #8fb0cb,0 10px 24px rgba(20,35,61,.3);font-family:var(--display);font-size:1.05rem;color:var(--ink);touch-action:none;line-height:1}
 #throwBtn.on{transform:translateY(4px);box-shadow:0 2px 0 #8fb0cb,0 6px 14px rgba(20,35,61,.3)}
@@ -205,7 +206,7 @@ body.killcam::after{box-shadow:inset 0 11vh 0 0 rgba(10,18,32,.92),inset 0 -11vh
     </div>
     <div id="mid">
       <div id="readout"><span id="angleTxt">Angle 35°</span><span id="powerTxt">Power 0%</span></div>
-      <div id="meter"><div id="meterFill"></div><div id="meterTicks"></div></div>
+      <div id="meter"><div id="meterFill"></div><div id="meterTicks"></div><div id="meterLast" title="Last throw" hidden></div></div>
     </div>
     <div id="actBox">
       <button id="packBtn" aria-label="Spend your turn packing a heavy snowball: your next hit counts triple">Pack ×3</button>
@@ -545,12 +546,15 @@ function faceTarget(p, idx) {
   return Math.atan2(t.x - p.x, t.z - p.z);
 }
 
+// Your aim stays where you left it last throw, so you can adjust from there. First throw faces the nearest friend.
+function startYaw(p) { return p.lastAim ? p.lastAim.yaw : faceTarget(p, 0); }
+
 function onTurnStart() {
   const p = curPlayer(); if (!p) return;
   S.turnSince = Date.now(); S.charging = false; S.chargeT = 0; S.power = 0; S.targetIdx = 0;
   if (p.local) {
-    S.aimYaw = faceTarget(p, 0) + (Math.random() - 0.5) * 0.5;
-    S.aimPitch = 35 * Math.PI / 180;
+    S.aimYaw = p.lastAim ? p.lastAim.yaw : faceTarget(p, 0) + (Math.random() - 0.5) * 0.5;
+    S.aimPitch = p.lastAim ? p.lastAim.pitch : 35 * Math.PI / 180;
     p.yaw = S.aimYaw; p.pitch = S.aimPitch;
     if (S.mode === 'online') sendAim(true);
   }
@@ -572,12 +576,12 @@ function confirmMove() {
   if (S.mode === 'online') {
     S.sending = true;
     api('move', { x: +(stay ? p.x : to.x).toFixed(3), z: +(stay ? p.z : to.z).toFixed(3) })
-      .then(() => { S.phase = 'aim'; S.aimYaw = faceTarget(p, 0); sendAim(true); })
+      .then(() => { S.phase = 'aim'; S.aimYaw = startYaw(p); sendAim(true); })
       .catch(e => toast(e.message, '', 1600))
       .finally(() => { S.sending = false; renderHUD(); });
   } else {
     if (!stay) { p.x = to.x; p.z = to.z; }
-    S.phase = 'aim'; S.aimYaw = faceTarget(p, 0);
+    S.phase = 'aim'; S.aimYaw = startYaw(p);
     renderHUD();
   }
 }
@@ -612,6 +616,7 @@ function throwNow() {
   const power = S.power;
   S.charging = false;
   p.yaw = S.aimYaw; p.pitch = S.aimPitch;
+  if (!p.cpu) p.lastAim = { yaw: p.yaw, pitch: p.pitch, power };
   if (S.mode === 'online') {
     // The server decides the result and sends it to everyone, us included; we animate it when it arrives.
     S.sending = true;
@@ -885,7 +890,7 @@ function syncFromView(v) {
   if (v.over && !S.over && !S.busy) { const w = S.byId.get(v.over.winner); if (w) gameOver(w); }
   const key = v.round + ':' + v.turn + ':' + v.cur;
   if (!S.busy && !v.over && key !== S.turnKey) { S.turnKey = key; onTurnStart(); }
-  if (!S.busy && v.phase === 'aim' && S.phase === 'move') { S.phase = 'aim'; const cp = curPlayer(); if (cp && cp.local) S.aimYaw = faceTarget(cp, 0); }
+  if (!S.busy && v.phase === 'aim' && S.phase === 'move') { S.phase = 'aim'; const cp = curPlayer(); if (cp && cp.local) S.aimYaw = startYaw(cp); }
   renderHUD();
 }
 
@@ -1199,6 +1204,9 @@ function updateAim(dt) {
     const ph = (S.chargeT / 1.3) % 2; S.power = ph < 1 ? ph : 2 - ph;
   }
   $('#meterFill').style.width = (S.power * 100).toFixed(1) + '%';
+  const last = p && p.local && !p.cpu ? p.lastAim : null;
+  $('#meterLast').hidden = !last;
+  if (last) $('#meterLast').style.left = (last.power * 100).toFixed(1) + '%';
   if (canMove()) {
     const d = Math.hypot(S.moveTo.x - p.x, S.moveTo.z - p.z);
     $('#angleTxt').textContent = 'Walk ' + d.toFixed(1) + ' of ' + MOVE_RADIUS + ' m';
@@ -1209,7 +1217,7 @@ function updateAim(dt) {
   } else {
     const showPitch = p ? (p.local ? S.aimPitch : p.pitch) : S.aimPitch;
     $('#angleTxt').textContent = 'Angle ' + Math.round(showPitch * 180 / Math.PI) + '°';
-    $('#powerTxt').textContent = 'Power ' + Math.round(S.power * 100) + '%';
+    $('#powerTxt').textContent = 'Power ' + Math.round(S.power * 100) + '%' + (last && !S.charging ? ' (last ' + Math.round(last.power * 100) + '%)' : '');
     if ($('#throwBtn').textContent !== 'HOLDTO THROW') $('#throwBtn').innerHTML = 'HOLD<br>TO THROW';
     $('#meter').style.visibility = '';
   }
