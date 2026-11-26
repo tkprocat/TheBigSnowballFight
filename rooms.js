@@ -31,6 +31,9 @@ export function viewFor(room, member) {
     host: room.host ? room.host.id : null,
     mode: room.mode,
     botLevel: room.botLevel || 'normal',
+    win: room.win,
+    timeLeft: room.endsAt ? Math.max(0, room.endsAt - Date.now()) : null, // ms left in a timed round
+    suddenDeath: !!room.suddenDeath,
     started: room.started,
     over: room.over,
     seed: room.seed,

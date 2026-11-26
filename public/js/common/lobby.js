@@ -20,8 +20,20 @@ export function showLobby(v) {
     b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
     b.disabled = !isHost;
   }
+  // how to win: the host picks, everyone sees it
+  const win = v.win || { type: 'points', points: 10 };
+  for (const b of document.querySelectorAll('#winRow button')) {
+    const n = Number(b.dataset.n);
+    b.setAttribute('aria-pressed', String(b.dataset.type === win.type && n === (win.type === 'time' ? win.minutes : win.points)));
+    b.disabled = !isHost;
+  }
   // bot difficulty: the host picks, everyone sees it (only shown when there are bots)
   const level = v.botLevel || 'normal';
+  for (const b of document.querySelectorAll('#winRow button'))
+    b.onclick = () => {
+      const n = Number(b.dataset.n);
+      api('setWin', b.dataset.type === 'time' ? { type: 'time', minutes: n } : { type: 'points', points: n }).catch((e) => toast(e.message, '', 1800));
+    };
   for (const b of document.querySelectorAll('#botLevelRow button')) { b.setAttribute('aria-pressed', String(b.dataset.level === level)); b.disabled = !isHost; }
   $('#botLevelRow').hidden = !v.players.some((p) => p.cpu);
   const ul = $('#lobbyList'); ul.textContent = '';
@@ -58,6 +70,11 @@ export function initLobby(onLeave) {
     b.onclick = () => api('setMode', { mode: b.dataset.mode }).catch((e) => toast(e.message, '', 1800));
   $('#lobbyBot').onclick = () => api('addBot').catch((e) => toast(e.message, '', 1800));
   $('#lobbyBot4').onclick = () => api('addBot', { count: 4 }).catch((e) => toast(e.message, '', 1800));
+  for (const b of document.querySelectorAll('#winRow button'))
+    b.onclick = () => {
+      const n = Number(b.dataset.n);
+      api('setWin', b.dataset.type === 'time' ? { type: 'time', minutes: n } : { type: 'points', points: n }).catch((e) => toast(e.message, '', 1800));
+    };
   for (const b of document.querySelectorAll('#botLevelRow button'))
     b.onclick = () => api('setBotLevel', { level: b.dataset.level }).catch((e) => toast(e.message, '', 1800));
   $('#lobbyWatch').onclick = () => api('spectate').catch((e) => toast(e.message, '', 1800));

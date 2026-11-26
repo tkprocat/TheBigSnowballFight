@@ -1,11 +1,12 @@
 // Turn-based mode: one player at a time walks up to 5 m, then throws (or packs a heavy snowball).
 // The server decides every throw's result; browsers only replay it.
 import {
-  TAU, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, HEAVY_MULT, PACK_MS, TURN_LIMIT,
+  TAU, PITCH_MIN, PITCH_MAX, HIT_POINTS, HEAVY_MULT, PACK_MS, TURN_LIMIT,
   clamp, simulate, windFor, throwShowMs, clampMove, standOk,
 } from '../../public/shared/physics.js';
 import { rand, place, broadcast, broadcastEvent, broadcastSay, later } from '../../rooms.js';
 import { botTurn } from './bots.js';
+import { checkWinner } from '../../public/shared/win.js';
 
 const BOT_DELAY = Number(process.env.BOT_DELAY_MS ?? 1500); // pause before a bot throws, so people can follow along
 
@@ -55,8 +56,11 @@ function doThrow(room, p, yaw, pitch, power) {
     if (victim.cpu && rand() < 0.5) broadcastSay(room, victim, { line: 3 });
   }
   room.lastActive = Date.now();
-  if (p.score >= WIN_SCORE) {
-    room.over = { winner: p.id };
+  // first to N points, or (checked after every throw) the clock: a shared lead when time runs out is sudden death
+  const result = checkWinner(room.players, room.win, room.endsAt, Date.now());
+  if (result && result.suddenDeath) room.suddenDeath = true;
+  if (result && result.winner) {
+    room.over = { winner: result.winner.id, reason: result.reason };
     clearTimers(room); room.turnEnds = null;
     return;
   }

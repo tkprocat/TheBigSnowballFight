@@ -127,3 +127,19 @@ test('everyone hears when someone joins or leaves, and who hosts after the host 
   assert.strictEqual(room.host, room.players[0]);
   void others;
 });
+
+test('the host picks how to win in the lobby: first to N points or a time limit', () => {
+  const { host, others, room } = lobby(2);
+  assert.deepStrictEqual(viewFor(room, room.players[1]).win, { type: 'points', points: 10 });
+  assert.throws(() => act('setWin', host.code, others[0].token, { type: 'time', minutes: 5 }), /Only the host/);
+  assert.throws(() => act('setWin', host.code, host.token, { type: 'points', points: 7 }), /Unknown win/);
+  assert.throws(() => act('setWin', host.code, host.token, { type: 'time', minutes: 999 }), /Unknown win/);
+  assert.throws(() => act('setWin', host.code, host.token, { type: 'sudden' }), /Unknown win/);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const v = viewFor(room, room.players[1]);
+  assert.deepStrictEqual(v.win, { type: 'time', minutes: 3 });
+  assert.ok(v.timeLeft > 170000 && v.timeLeft <= 180000, 'the clock is running');
+  assert.throws(() => act('setWin', host.code, host.token, { type: 'points', points: 5 }), /before the game starts/);
+  stop(room);
+});

@@ -150,7 +150,7 @@ function syncFromView(v) {
   // a new round starts clean: no leftover message, feed, splat, or snowballs still flying from the last round
   // (one landing after Play again would show the old round's "got you" message)
   if (!v.over && S.over) { hideOver(); clearFeed(); clearBalls(); R.splatUntil = 0; }
-  if (v.over && !S.over) { const w = S.byId.get(v.over.winner); if (w) { unlock(); showOver(w); } }
+  if (v.over && !S.over) { const w = S.byId.get(v.over.winner); if (w) { unlock(); showOver(w, v.over.reason); } }
   renderHUD(true);
 }
 

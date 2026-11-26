@@ -97,7 +97,7 @@ test('hits score by body part, move the victim, and reaching 10 wins the round',
   }
   assert.ok(a.score >= 10);
   assert.ok(parts.has('head') || parts.has('body'));
-  assert.deepStrictEqual(room.over, { winner: a.id });
+  assert.deepStrictEqual(room.over, { winner: a.id, reason: 'points' });
   assert.throws(() => act('throw', host.code, b.token, { yaw: 0, pitch: 0.5, power: 0.5 }), /over/);
   assert.throws(() => act('again', host.code, b.token), /Only the host/);
   act('again', host.code, host.token);
@@ -223,4 +223,24 @@ test('bots take their own turn; a room with no people left is removed', async ()
   assert.strictEqual(room.turn, 2);
   act('leave', host.code, host.token);
   assert.ok(!rooms.has(host.code));
+});
+
+test('turn-based timed rounds end on the first throw after the clock, or go to sudden death on a tie', () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const [a, b] = room.players;
+  room.map = { walls: [], trees: [], deco: [] };
+  a.x = 0; a.z = 0; b.x = 0; b.z = 20; // throws below go the other way, so they never hit
+  a.score = 5; b.score = 5;
+  room.endsAt = Date.now() - 1;
+  room.cur = 0; room.busyUntil = 0; room.phase = 'aim';
+  act('throw', host.code, a.token, { yaw: Math.PI, pitch: 0.5, power: 0.1 }); // a throw that can't hit anyone
+  assert.strictEqual(room.over, null);
+  assert.strictEqual(room.suddenDeath, true, 'tied when time ran out: sudden death');
+  b.score = 6;
+  a.x = 0; a.z = 0; b.x = 0; b.z = 20;
+  room.cur = 1; room.busyUntil = 0; room.phase = 'aim';
+  act('throw', host.code, b.token, { yaw: Math.PI, pitch: 0.5, power: 0.1 });
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
 });

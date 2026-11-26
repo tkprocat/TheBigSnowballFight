@@ -190,3 +190,6 @@ body.killcam .hud{opacity:.12;transition:opacity .2s}
 @keyframes kfIn{from{transform:translateX(-12px);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.kf{animation:none}}
 @media (max-width:520px){.kf{font-size:.72rem;padding:2px 8px}}
+
+#turnSub.hurry{color:#ffd0d2}
+#winRow .seg button{padding:8px 10px}

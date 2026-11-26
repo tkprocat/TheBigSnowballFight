@@ -2,7 +2,8 @@
 // they like. The server is the authority on everything that scores: it owns ammo, pickups, cooldowns and shields,
 // steps every snowball in flight against where players stand right now, and decides each hit. Browsers report
 // where they are (checked for speed and walls) and ask to throw; they only draw what the server sends back.
-import { TAU, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, clamp } from '../../public/shared/physics.js';
+import { TAU, PITCH_MIN, PITCH_MAX, HIT_POINTS, clamp } from '../../public/shared/physics.js';
+import { checkWinner } from '../../public/shared/win.js';
 import {
   RUN_SPEED, SPRINT_SPEED, TICK_MS, SEND_MS, CARRY_MAX, PICKUP_R, BALL_RESPAWN_MS, THROW_COOLDOWN_MS, THROW_POWER, SHIELD_MS, START_COUNTDOWN_MS,
   pilesOnMap, pileSize, pathClear, ballSpot, newBall, stepBall,
@@ -113,9 +114,11 @@ export function tick(room, now) {
     rt.events.push(end);
   }
 
-  const winner = room.players.find((p) => p.score >= WIN_SCORE);
-  if (winner) {
-    room.over = { winner: winner.id };
+  // first to N points, or the clock: a tie when time runs out goes to sudden death until someone leads alone
+  const result = checkWinner(room.players, room.win, room.endsAt, now); // endsAt is on the same clock as now (from goAt)
+  if (result && result.suddenDeath && !room.suddenDeath) { room.suddenDeath = true; broadcast(room); }
+  if (result && result.winner) {
+    room.over = { winner: result.winner.id, reason: result.reason };
     stopTick(room);
     sendState(room, now);
     broadcast(room);
@@ -134,6 +137,7 @@ export function snapshot(room, now = clock.now()) {
     b: rt.balls.map((b) => [b.id, b.x, b.z, b.n || 1]),
     e: rt.events,
     go: Math.max(0, (rt.goAt || 0) - now), // ms left of the start countdown
+    tl: room.endsAt ? Math.max(0, room.endsAt - now) : null, // ms left in a timed round
   };
 }
 

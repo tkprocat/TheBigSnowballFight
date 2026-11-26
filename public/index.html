@@ -18,7 +18,7 @@
   <div class="panel">
     <div class="brand">
       <h1>The Big Snowball Fight</h1>
-      <p>Turn-based or realtime. Duck behind cover, mind your angle and power, and hit your friends. Head hits score 2, body hits 1. First to 10 wins.</p>
+      <p>Turn-based or realtime. Duck behind cover, mind your angle and power, and hit your friends. Head hits score 2, body hits 1. First to 10 points wins, or the host can set a time limit.</p>
     </div>
     <div class="card">
       <span class="lbl">Your snowfighter</span>
@@ -56,6 +56,10 @@
       <ul class="plist" id="lobbyList"></ul>
       <p class="note" id="watchList" hidden></p>
       <div class="row"><button class="btn" id="lobbyBot">+ Computer player</button><button class="btn" id="lobbyBot4">+4</button><button class="btn" id="lobbyWatch">Watch instead</button></div>
+      <div class="row" id="winRow"><span class="lbl">How to win</span>
+        <div class="seg" role="group" aria-label="First to this many points"><button data-type="points" data-n="5">First to 5</button><button data-type="points" data-n="10">10</button><button data-type="points" data-n="20">20</button></div>
+        <div class="seg" role="group" aria-label="Most points when time runs out"><button data-type="time" data-n="3">3 min</button><button data-type="time" data-n="5">5 min</button><button data-type="time" data-n="10">10 min</button></div>
+      </div>
       <div class="row" id="botLevelRow"><span class="lbl">Computer players</span>
         <div class="seg" role="group" aria-label="Computer player difficulty"><button data-level="easy">Easy</button><button data-level="normal">Normal</button><button data-level="hard">Hard</button></div>
       </div>

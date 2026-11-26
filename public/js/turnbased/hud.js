@@ -4,6 +4,7 @@ import { S } from '../common/state.js';
 import { $ } from '../common/dom.js';
 import { NET } from '../common/net.js';
 import { renderScores, followed, watchHint } from '../common/players.js';
+import { roundGoal } from '../common/clock.js';
 import { T, curPlayer, nextPlayer, currentWind, canControl, canMove, hiddenFromNext } from './state.js';
 
 export function renderHUD() {
@@ -56,7 +57,9 @@ function renderTurnBanner() {
   if (timing) main += ' · ' + left + 's';
   $('#turnMain').textContent = main;
   $('#turnMain').classList.toggle('hurry', !!timing && left <= 10 && p.local);
-  $('#turnSub').textContent = 'Lobby ' + NET.code + (S.watching ? ' · ' + watchHint() : '');
+  const goal = roundGoal();
+  $('#turnSub').textContent = 'Lobby ' + NET.code + ' · ' + goal.text + (S.watching ? ' · ' + watchHint() : '');
+  $('#turnSub').classList.toggle('hurry', !S.over && goal.hurry);
 }
 
 // The opponent closest to where you're aiming (within about 20°), and how far away they are.

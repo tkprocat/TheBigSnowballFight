@@ -149,7 +149,7 @@ test('reaching the winning score ends the round; again resets it', () => {
   const { room, code, tok, a } = g;
   a.score = WIN_SCORE - 1;
   assert.ok(findHit(g) != null);
-  assert.deepStrictEqual(room.over, { winner: a.id });
+  assert.deepStrictEqual(room.over, { winner: a.id, reason: 'points' });
   assert.throws(() => act('throw', code, tok[0], { yaw: 0, pitch: 0.4 }), /over/);
   act('again', code, tok[0]);
   assert.strictEqual(room.over, null);
@@ -331,4 +331,33 @@ test('bots never run more route searches in a tick than the planning budget allo
   assert.ok(most <= PLANS_PER_TICK, `at most ${most} searches in one tick (budget ${PLANS_PER_TICK})`);
   assert.ok(most > 0, 'bots did plan');
   stopTick(room);
+});
+
+test('win conditions in realtime: first to 5, and a timed round with sudden death on a tie', async () => {
+  const { checkWinner } = await import('../public/shared/win.js');
+  // first to 5
+  const g = game();
+  g.room.win = { type: 'points', points: 5 };
+  g.a.score = 4;
+  assert.ok(findHit(g) != null);
+  assert.deepStrictEqual(g.room.over, { winner: g.a.id, reason: 'points' });
+  stopTick(g.room);
+  // a timed round: nothing at 9 points before the clock runs out; a tie when it does is sudden death
+  const t = game();
+  t.room.win = { type: 'time', minutes: 3 };
+  t.room.endsAt = T + 60000; // realtime runs on its own clock (faked in these tests)
+  t.a.score = 9; t.b.score = 9;
+  run(t.room, TICK_MS);
+  assert.strictEqual(t.room.over, null, 'scores do not end a timed round');
+  t.room.endsAt = T;
+  run(t.room, TICK_MS);
+  assert.strictEqual(t.room.over, null);
+  assert.strictEqual(t.room.suddenDeath, true, 'a shared lead when time runs out is sudden death');
+  t.a.score = 10;
+  run(t.room, TICK_MS);
+  assert.deepStrictEqual(t.room.over, { winner: t.a.id, reason: 'time' }, 'the first lone leader wins');
+  stopTick(t.room);
+  // the rule itself
+  assert.strictEqual(checkWinner([{ score: 3 }, { score: 9 }], { type: 'time', minutes: 3 }, 100, 50), null, 'clock still running');
+  assert.strictEqual(checkWinner([{ id: 'x', score: 3 }, { id: 'y', score: 9 }], { type: 'time', minutes: 3 }, 100, 150).winner.id, 'y');
 });

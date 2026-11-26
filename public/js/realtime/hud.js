@@ -1,10 +1,10 @@
 // Realtime HUD: scores (leader first), your snowballs, your angle, and hints.
-import { WIN_SCORE } from '../../shared/physics.js';
 import { CARRY_MAX } from '../../shared/realtimeRules.js';
 import { S } from '../common/state.js';
 import { $, toast } from '../common/dom.js';
 import { NET } from '../common/net.js';
 import { renderScores, followed, watchHint } from '../common/players.js';
+import { roundGoal } from '../common/clock.js';
 import { R, me, canPlay } from './state.js';
 import { locked, lockFailed } from './input.js';
 
@@ -37,9 +37,12 @@ export function updateReadout() {
   else if (p && performance.now() < (R.splatUntil || 0)) main = 'Splat!';
   else if (R.sprinting) main = 'Sprinting!';
   else if (p && p.ammo === 0) main = 'Pick up snowballs!';
-  else main = 'First to ' + WIN_SCORE;
+  else main = roundGoal().text;
   if ($('#turnMain').textContent !== main) $('#turnMain').textContent = main;
-  const sub = 'Lobby ' + NET.code + (S.watching ? ' · ' + watchHint() : '');
+  $('#turnMain').classList.toggle('hurry', !S.over && roundGoal().hurry);
+  // the clock stays in view even while the banner says something else
+  const goal = roundGoal(), timed = S.win && S.win.type === 'time';
+  const sub = 'Lobby ' + NET.code + (timed && main !== goal.text ? ' · ' + goal.text : '') + (S.watching ? ' · ' + watchHint() : '');
   if ($('#turnSub').textContent !== sub) $('#turnSub').textContent = sub;
   $('#meter').style.visibility = 'hidden';
   $('#angleTxt').textContent = 'Angle ' + Math.round(R.pitch * 180 / Math.PI) + '°';

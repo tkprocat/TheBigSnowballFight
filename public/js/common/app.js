@@ -76,6 +76,8 @@ async function joinLobby(code) {
 
 function onView(v) {
   S.watching = !!v.watching;
+  S.win = v.win || null; S.suddenDeath = !!v.suddenDeath;
+  S.timeEnds = typeof v.timeLeft === 'number' ? performance.now() + v.timeLeft : 0;
   document.body.classList.toggle('watching', S.watching);
   if (!v.started) {
     if (active) exitGame();
