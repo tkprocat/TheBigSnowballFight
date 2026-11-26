@@ -55,6 +55,10 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 .note{margin:0;font-size:.9rem;color:var(--ink-soft);font-weight:700}
 .keys{color:#fff;font-weight:800;font-size:.85rem;text-shadow:0 1px 3px rgba(20,35,61,.6);margin:0}
 #codeIn{text-transform:uppercase;letter-spacing:.2em;max-width:160px}
+#lobby{position:fixed;inset:0;overflow-y:auto;display:flex;justify-content:center;align-items:flex-start;padding-top:calc(var(--sat) + 24px);padding-bottom:calc(var(--sab) + 24px);padding-left:var(--sal);padding-right:var(--sar);touch-action:pan-y}
+.bigcode{font-family:var(--display);font-size:2.6rem;letter-spacing:.18em;line-height:1}
+#lobbyLink{word-break:break-all;user-select:text;-webkit-user-select:text}
+.crown{font-size:.7rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#a8262d}
 
 /* ---------- HUD ---------- */
 .hud{position:fixed;pointer-events:none}
@@ -132,11 +136,27 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
     <div class="card" id="onlineCard">
       <h2>Play online with friends</h2>
       <p class="note" id="onlineNote">Checking whether online play is available here…</p>
-      <div class="row"><button class="btn primary" id="hostBtn" disabled>Create a room</button></div>
-      <div class="row"><input type="text" id="codeIn" maxlength="4" placeholder="CODE" aria-label="Room code"><button class="btn" id="joinBtn" disabled>Join room</button></div>
-      <ul class="plist" id="openGames"></ul>
+      <div class="row"><button class="btn primary" id="hostBtn" disabled>Create a lobby</button></div>
+      <div class="row"><input type="text" id="codeIn" maxlength="4" placeholder="CODE" aria-label="Lobby code"><button class="btn" id="joinBtn" disabled>Join lobby</button></div>
     </div>
     <p class="keys">Keyboard: ← → aim, ↑ ↓ angle, Tab next target, hold Space to charge and release to throw. On a phone, use the on-screen buttons.</p>
+  </div>
+</div>
+
+<div id="lobby" hidden>
+  <div class="panel">
+    <div class="card">
+      <span class="lbl">Lobby code</span>
+      <div class="row"><span id="lobbyCode" class="bigcode">----</span><button class="btn" id="copyLink">Copy invite link</button></div>
+      <p class="note" id="lobbyLink"></p>
+    </div>
+    <div class="card">
+      <h2>Snowfighters</h2>
+      <ul class="plist" id="lobbyList"></ul>
+      <div class="row" id="hostRow"><button class="btn" id="lobbyBot">+ Computer player</button></div>
+      <p class="note" id="lobbyNote"></p>
+      <div class="row"><button class="btn primary" id="lobbyStart">Start game</button><button class="btn" id="lobbyLeave">Leave lobby</button></div>
+    </div>
   </div>
 </div>
 
@@ -186,111 +206,17 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
+import { clamp, lerp, TAU, angDiff, mulberry32, DT, BALL_R, PITCH_MIN, PITCH_MAX, WIN_SCORE, TURN_LIMIT, COLORS, BOT_NAMES, makeMap, simulate, windFor, spawnPoint, planThrow } from './physics.js';
 
 /* =========================================================
    Utilities
    ========================================================= */
 const $ = s => document.querySelector(s);
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const lerp = (a, b, t) => a + (b - a) * t;
-const TAU = Math.PI * 2;
-function angDiff(a, b) { return ((b - a + Math.PI) % TAU + TAU) % TAU - Math.PI; }
-function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v)) ? v : d;
 const safeColor = c => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ? c : '#8899aa';
-const safeName = n => (typeof n === 'string' ? n.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮]/g, '').trim().slice(0, 14) : '') || 'Snowfighter';
+const safeName = n => (typeof n === 'string' ? n.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e]/g, '').trim().slice(0, 14) : '') || 'Snowfighter';
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
-
-/* =========================================================
-   Game constants and physics (deterministic, plain numbers)
-   ========================================================= */
-const GRAV = 9.8, DT = 1 / 120, BALL_R = 0.15, SPEED_MIN = 7, SPEED_MAX = 25;
-const ARENA = 30, WIN_SCORE = 5, TURN_LIMIT = 30;
-const PITCH_MIN = 5 * Math.PI / 180, PITCH_MAX = 70 * Math.PI / 180;
-const COLORS = ['#e2434b', '#2f7de1', '#f2a20c', '#2bb673', '#9b5de5', '#ff6fa3', '#14b8c4', '#8a5a2b'];
-const CPU_NAMES = ['Frosty', 'Blizzard', 'Sleet', 'Flurry', 'Icicle', 'Slushie'];
-
-function makeMap(seed) {
-  const rng = mulberry32(seed);
-  const walls = [], trees = [], deco = [];
-  for (let i = 0; i < 9; i++) {
-    const a = rng() * TAU, r = 5 + rng() * 21;
-    walls.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, w: 2.6 + rng() * 2.2, h: 1.0 + rng() * 0.5, d: 0.7, ry: rng() * Math.PI });
-  }
-  let tries = 0;
-  while (trees.length < 11 && tries++ < 300) {
-    const a = rng() * TAU, r = 7 + rng() * 21, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (walls.some(w => Math.hypot(w.x - x, w.z - z) < w.w / 2 + 2)) continue;
-    if (trees.some(t => Math.hypot(t.x - x, t.z - z) < 4)) continue;
-    trees.push({ x, z, s: 0.85 + rng() * 0.4 });
-  }
-  for (let i = 0; i < 70; i++) { const a = rng() * TAU, r = 36 + rng() * 40; deco.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, s: 0.9 + rng() * 0.9 }); }
-  return { walls, trees, deco };
-}
-
-function obstacleHit(x, y, z, map) {
-  for (const t of map.trees) {
-    const dx = x - t.x, dz = z - t.z, d = Math.hypot(dx, dz), s = t.s;
-    if (y < 1.2 * s && d < 0.3 * s + BALL_R) return 'tree';
-    if (y >= 1.0 * s && y < 6 * s) { const r = 1.7 * s * (1 - (y - s) / (5 * s)); if (d < r + BALL_R) return 'tree'; }
-  }
-  for (const w of map.walls) {
-    const dx = x - w.x, dz = z - w.z, c = Math.cos(-w.ry), sn = Math.sin(-w.ry);
-    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
-    if (Math.abs(lx) < w.w / 2 + BALL_R && Math.abs(lz) < w.d / 2 + BALL_R && y < w.h + BALL_R) return 'wall';
-  }
-  return null;
-}
-
-function launchPoint(from, yaw) { return { x: from.x + Math.sin(yaw) * 0.45, y: 1.75, z: from.z + Math.cos(yaw) * 0.45 }; }
-
-/* simulate: returns sampled path + what it hit. targets = [{id,x,z}] */
-function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps = 1200, probe = null) {
-  const v = SPEED_MIN + clamp(power, 0, 1) * (SPEED_MAX - SPEED_MIN);
-  const p = launchPoint(from, yaw);
-  let x = p.x, y = p.y, z = p.z;
-  let vx = Math.sin(yaw) * Math.cos(pitch) * v, vy = Math.sin(pitch) * v, vz = Math.cos(yaw) * Math.cos(pitch) * v;
-  const pts = new Float32Array((maxSteps + 1) * 3);
-  pts[0] = x; pts[1] = y; pts[2] = z;
-  let n = 1, hit = null, kind = 'out', best = Infinity;
-  for (let i = 0; i < maxSteps; i++) {
-    vx += wind.x * DT; vz += wind.z * DT; vy -= GRAV * DT;
-    vx *= 0.9995; vz *= 0.9995; vy *= 0.9995;
-    x += vx * DT; y += vy * DT; z += vz * DT;
-    pts[n * 3] = x; pts[n * 3 + 1] = y; pts[n * 3 + 2] = z; n++;
-    if (probe) { const d = Math.hypot(x - probe.x, (y - 1.1) * 0.7, z - probe.z); if (d < best) best = d; }
-    let done = false;
-    for (const t of targets) {
-      const bx = x - t.x, bz = z - t.z;
-      if (Math.hypot(bx, y - 1.0, bz) < 0.55 + BALL_R || Math.hypot(bx, y - 1.72, bz) < 0.34 + BALL_R || (y < 0.7 && Math.hypot(bx, bz) < 0.3 + BALL_R)) { hit = t.id; kind = 'player'; done = true; break; }
-    }
-    if (done) break;
-    const ob = obstacleHit(x, y, z, map); if (ob) { kind = ob; break; }
-    if (y <= BALL_R) { pts[(n - 1) * 3 + 1] = BALL_R; kind = 'ground'; break; }
-    if (Math.hypot(x, z) > 80) { kind = 'out'; break; }
-  }
-  return { pts, n, hit, kind, end: { x: pts[(n - 1) * 3], y: pts[(n - 1) * 3 + 1], z: pts[(n - 1) * 3 + 2] }, best };
-}
-
-function windFor(seed, turn) {
-  const rng = mulberry32((seed ^ Math.imul(turn + 1, 2654435761)) >>> 0);
-  const a = rng() * TAU, s = rng() < 0.15 ? 0 : 0.4 + rng() * 2.6;
-  return { x: Math.sin(a) * s, z: Math.cos(a) * s, s, a };
-}
-
-function spawnPoint(rng, map, others) {
-  for (let k = 0; k < 300; k++) {
-    const a = rng() * TAU, r = 5 + rng() * (ARENA - 7), x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (map.walls.some(w => Math.hypot(w.x - x, w.z - z) < w.w / 2 + 1.3)) continue;
-    if (map.trees.some(t => Math.hypot(t.x - x, t.z - z) < 2.4)) continue;
-    const minD = k < 200 ? 9 : 4;
-    if (others.some(o => Math.hypot(o.x - x, o.z - z) < minD)) continue;
-    return { x, z };
-  }
-  return { x: (rng() - 0.5) * 20, z: (rng() - 0.5) * 20 };
-}
 
 /* =========================================================
    Three.js scene
@@ -536,7 +462,7 @@ if (!me.name) me.name = 'Player ' + (1 + Math.floor(Math.random() * 99));
 
 function curPlayer() { return S.players[S.cur] || null; }
 function currentWind() { return windFor(S.seed, S.turn); }
-function canControl() { const p = curPlayer(); return S.screen === 'game' && !S.busy && !S.over && p && p.local && !p.cpu; }
+function canControl() { const p = curPlayer(); return S.screen === 'game' && !S.busy && !S.over && !S.sending && p && p.local && !p.cpu; }
 
 function addPlayer(o) {
   const p = Object.assign({ x: 0, z: 0, yaw: 0, pitch: 0.6, score: 0, local: true, cpu: false, hitT: 0, armT: 0, ax: 0, az: 0, init: false }, o);
@@ -575,10 +501,10 @@ function onTurnStart() {
     S.aimYaw = faceTarget(p, 0) + (Math.random() - 0.5) * 0.5;
     S.aimPitch = 35 * Math.PI / 180;
     p.yaw = S.aimYaw; p.pitch = S.aimPitch;
-    if (S.mode === 'online') NET.pub({ ay: +p.yaw.toFixed(3), ap: +p.pitch.toFixed(3) });
+    if (S.mode === 'online') sendAim(true);
   }
   S.camMode = 'aim';
-  if (p.cpu) S.cpu = cpuPlan(p);
+  if (p.cpu && S.mode === 'local') S.cpu = cpuPlan(p);
   else S.cpu = null;
   if (S.mode === 'local' && !p.cpu && S.players.filter(q => !q.cpu).length > 1) toast(p.name + "'s turn", 'Pass the device');
   else if (p.local && !p.cpu && S.mode === 'online' && S.players.length > 1) { toast('Your turn!'); sfx.tick(); }
@@ -595,20 +521,14 @@ function throwNow() {
   const power = S.power;
   S.charging = false;
   p.yaw = S.aimYaw; p.pitch = S.aimPitch;
-  const wind = currentWind();
-  const targets = opponentsOf(p).map(o => ({ id: o.id, x: o.x, z: o.z }));
-  const sim = simulate(p, p.yaw, p.pitch, power, wind, targets, S.map);
   if (S.mode === 'online') {
-    const th = { id: Math.random().toString(36).slice(2, 10), turn: NET.T, yaw: +p.yaw.toFixed(4), pitch: +p.pitch.toFixed(4), power: +power.toFixed(4), x: +p.x.toFixed(3), z: +p.z.toFixed(3), hit: sim.hit, steps: sim.n - 1 };
-    // replay exactly what others will replay
-    const rep = simulate({ x: th.x, z: th.z }, th.yaw, th.pitch, th.power, wind, [], S.map, th.steps);
-    NET.T += 1;
-    NET.pub({ th, T: NET.T });
-    startFlight(p, rep, sim.hit, () => {
-      if (sim.hit) { NET.score += 1; p.score = NET.score; NET.pub({ score: NET.score }); }
-      afterFlightOnline();
-    });
+    // The server decides the result and sends it to everyone, us included; we animate it when it arrives.
+    S.sending = true;
+    api('throw', { yaw: p.yaw, pitch: p.pitch, power })
+      .catch(e => toast(e.message, '', 1800))
+      .finally(() => { S.sending = false; });
   } else {
+    const sim = simulate(p, p.yaw, p.pitch, power, currentWind(), opponentsOf(p).map(o => ({ id: o.id, x: o.x, z: o.z })), S.map);
     startFlight(p, sim, sim.hit, () => {
       if (sim.hit) p.score++;
       renderHUD();
@@ -641,7 +561,7 @@ function updateFlights(dt) {
       const victim = f.hitId && S.byId.get(f.hitId);
       if (victim) {
         puff(e.x, e.y, e.z, 60, 5); sfx.hit(); victim.hitT = 1.2; victim.avatar.userData.splat.visible = true;
-        toast(f.thrower.name + ' got ' + victim.name + '!', victim.local && S.mode === 'online' ? 'Splat! Moving you to a new spot' : '');
+        toast(f.thrower.name + ' got ' + victim.name + '!', victim.local && S.mode === 'online' ? 'Splat! You hop to a new spot' : '');
       } else {
         puff(e.x, Math.max(e.y, 0.2), e.z, 30, 3); sfx.thud();
         if (f.thrower.local && !f.thrower.cpu) toast(['Missed!', 'So close!', 'Splat… on the snow', 'Wide!'][Math.floor(Math.random() * 4)], '', 1000);
@@ -661,18 +581,20 @@ function updateFlights(dt) {
 }
 
 function relocate(p) {
-  if (S.mode === 'online' && !p.local) return; // remote players move themselves
+  if (S.mode === 'online') return; // the server already moved them
   const old = { x: p.x, z: p.z };
   const sp = spawnPoint(Math.random, S.map, S.players.filter(o => o !== p));
   puff(old.x, 1, old.z, 30, 3);
   p.x = sp.x; p.z = sp.z;
-  if (S.mode === 'online') { NET.x = sp.x; NET.z = sp.z; NET.pub({ x: +sp.x.toFixed(3), z: +sp.z.toFixed(3) }); }
 }
 
 function gameOver(winner) {
   S.over = true; sfx.win();
   $('#overTitle').textContent = winner.name + ' wins!';
   $('#overSub').textContent = S.players.map(p => p.name + ' ' + p.score).join(' · ');
+  const canAgain = S.mode !== 'online' || (NET.view && NET.view.host === NET.id);
+  $('#againBtn').hidden = !canAgain;
+  if (!canAgain) $('#overSub').textContent += ' · Waiting for the host to start the next round';
   $('#over').hidden = false;
   renderHUD();
 }
@@ -680,21 +602,8 @@ function gameOver(winner) {
 /* ---------- CPU ---------- */
 function cpuPlan(p) {
   const opp = opponentsOf(p); if (!opp.length) return null;
-  const tgt = opp[Math.floor(Math.random() * opp.length)];
-  const wind = currentWind();
-  const base = Math.atan2(tgt.x - p.x, tgt.z - p.z);
-  let best = { d: Infinity, yaw: base, pitch: 0.6, power: 0.5 };
-  for (const pitch of [0.35, 0.6, 0.85]) {
-    for (let dy = -0.36; dy <= 0.36; dy += 0.04) {
-      for (let pw = 0.02; pw <= 1; pw += 0.04) {
-        const s = simulate(p, base + dy, pitch, pw, wind, [{ id: tgt.id, x: tgt.x, z: tgt.z }], S.map, 900, tgt);
-        const d = s.hit ? 0 : s.best;
-        if (d < best.d) best = { d, yaw: base + dy, pitch, power: pw };
-      }
-    }
-  }
-  const g = () => (Math.random() + Math.random() + Math.random() - 1.5);
-  return { yaw: best.yaw + g() * 0.06, pitch: clamp(best.pitch + g() * 0.04, PITCH_MIN, PITCH_MAX), power: clamp(best.power + g() * 0.06, 0.02, 1), phase: 'think', t: 0.7 };
+  const plan = planThrow(p, opp, currentWind(), S.map);
+  return Object.assign(plan, { phase: 'think', t: 0.7 });
 }
 function updateCpu(dt) {
   const c = S.cpu, p = curPlayer();
@@ -712,166 +621,204 @@ function updateCpu(dt) {
 }
 
 /* =========================================================
-   Online play (room capability: presence-only, no server)
+   Online play: lobby server (server.js)
+   Lobbies have 4-letter codes. The server decides every throw;
+   this page only sends actions and replays what it is told.
    ========================================================= */
-const NET = {
-  lobby: null, gr: null, code: null, me: null, t0: 0, T: 0, round: 0, score: 0, x: 0, z: 0,
-  seen: new Map(), known: new Set(), turnTimer: null,
-  pub(patch) { if (this.gr) this.gr.presence(patch).catch(() => {}); },
-};
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-function randCode() { let s = ''; for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return s; }
+const NET = { ok: false, code: null, token: null, id: null, es: null, view: null, seenN: 0, pendingHits: new Set() };
+let lastAimSent = 0;
+
+function sessGet() { try { const s = JSON.parse(sessionStorage.getItem('sb_session') || 'null'); return s && s.code && s.token ? s : null; } catch { return null; } }
+function sessSet(v) { try { sessionStorage.setItem('sb_session', JSON.stringify(v)); } catch {} }
+function sessClear() { try { sessionStorage.removeItem('sb_session'); } catch {} }
+
+async function api(action, body = {}) {
+  let res, data;
+  try {
+    res = await fetch('/api/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: NET.code, token: NET.token, ...body }) });
+    data = await res.json();
+  } catch { throw new Error('Could not reach the game server'); }
+  if (!data.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+
+function sendAim(force) {
+  const p = curPlayer(); if (!p || !p.local || !NET.code) return;
+  const now = performance.now(); if (!force && now - lastAimSent < 100) return; lastAimSent = now;
+  api('aim', { yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3) }).catch(() => {});
+}
 
 (async () => {
-  let room = null;
-  try { room = window.claude && window.claude.use ? await window.claude.use('room') : null; } catch { room = null; }
-  NET.lobby = room;
   const note = $('#onlineNote');
-  if (!room) {
-    note.textContent = 'Online rooms work when this page is opened on claude.ai while signed in. Play on this device in the meantime.';
+  try {
+    if (!/^https?:$/.test(location.protocol)) throw new Error('file');
+    const r = await fetch('/api/hello');
+    const d = await r.json();
+    NET.ok = !!(d && d.ok && d.game === 'snowball');
+  } catch { NET.ok = false; }
+  if (!NET.ok) {
+    note.textContent = 'Online lobbies need the game server (see the README). Here you can play on one device.';
     return;
   }
-  note.textContent = 'Create a room and share the 4-letter code, or join a friend’s room. Everyone needs this page open.';
+  note.textContent = 'Create a lobby and send friends the code or invite link. Joining works mid-game too.';
   $('#hostBtn').disabled = false; $('#joinBtn').disabled = false;
-  room.onPeers(renderOpenGames, () => {});
+  const q = new URLSearchParams(location.search).get('room');
+  if (q) $('#codeIn').value = q.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+  const saved = sessGet();
+  if (saved) connect(saved);
 })();
 
-function renderOpenGames() {
-  const ul = $('#openGames'); ul.textContent = '';
-  if (!NET.lobby || S.screen !== 'menu') return;
-  const games = new Map();
-  for (const p of NET.lobby.peers()) {
-    const g = p.presence && p.presence.game;
-    if (typeof g === 'string' && /^[A-Z]{4}$/.test(g) && !p.sameTab) games.set(g, (games.get(g) || 0) + 1);
-  }
-  for (const [code, n] of games) {
-    const li = document.createElement('li');
-    const t = document.createElement('span'); t.textContent = 'Room ' + code + ' · ' + n + (n === 1 ? ' player' : ' players');
-    const b = document.createElement('button'); b.className = 'btn'; b.style.marginLeft = 'auto'; b.textContent = 'Join';
-    b.onclick = () => joinRoom(code);
-    li.append(t, b); ul.appendChild(li);
-  }
-}
-
-async function joinRoom(code) {
-  code = (code || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
-  if (code.length !== 4 || !NET.lobby) { toast('Enter a 4-letter code', '', 1200); return; }
+async function hostLobby() {
   saveMe(); audio();
-  let gr;
-  try { gr = await NET.lobby.join('snow-' + code.toLowerCase()); }
-  catch (e) { toast('Could not join that room', e && e.code === 'limit_reached' ? 'Too many rooms open. Try again shortly.' : 'Try again in a moment.', 2200); return; }
-  clearPlayers();
-  setMap(hashStr('snow-' + code));
-  Object.assign(NET, { gr, code, me: null, t0: Date.now(), T: 0, round: 0, score: 0 });
-  NET.seen = new Map(); NET.known = new Set();
-  const others = gr.peers().filter(p => !p.sameTab && p.presence && p.presence.g === 1).map(p => ({ x: num(p.presence.x), z: num(p.presence.z) }));
-  const sp = spawnPoint(Math.random, S.map, others);
-  NET.x = sp.x; NET.z = sp.z;
-  S.mode = 'online'; S.over = false; S.turnKey = ''; S.cur = 0;
-  NET.pub({ g: 1, name: me.name, color: me.color, x: +sp.x.toFixed(3), z: +sp.z.toFixed(3), ay: 0, ap: 0.6, score: 0, round: 0, T: 0, t: NET.t0, th: null });
-  NET.lobby.presence({ game: code }).catch(() => {});
-  gr.onPeers(ch => onRoomPeers(ch), () => { toast('Lost connection to the room', '', 2500); });
-  showGame();
-  $('#turnSub').textContent = 'Room ' + code;
-  clearInterval(NET.turnTimer);
-  NET.turnTimer = setInterval(onlineTick, 500);
-  // render self immediately
-  syncOnline(gr.peers());
+  try { connect(await api('create', { name: me.name, color: me.color })); }
+  catch (e) { toast(e.message, '', 2200); }
+}
+async function joinLobby(code) {
+  code = (code || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+  if (code.length !== 4) { toast('Enter the 4-letter code', '', 1400); return; }
+  saveMe(); audio();
+  try { connect(await api('join', { code, name: me.name, color: me.color })); }
+  catch (e) { toast(e.message, '', 2200); }
 }
 
-function onRoomPeers(ch) {
-  for (const p of ch.joined) {
-    if (p.presence && p.presence.g === 1 && !NET.known.has(p.peer)) { NET.known.add(p.peer); if (p.presence.th) NET.seen.set(p.peer, p.presence.th.id); }
-  }
-  syncOnline(ch.peers);
-}
-
-function syncOnline(peers) {
-  if (S.mode !== 'online') return;
-  const list = peers.filter(p => p.kind === 'viewer' && p.presence && p.presence.g === 1);
-  const mine = peers.find(p => p.sameTab);
-  if (mine) NET.me = mine.peer;
-  // make sure I'm in the list even before my presence echoes
-  if (NET.me && !list.some(p => p.peer === NET.me)) list.push({ peer: NET.me, sameTab: true, presence: { g: 1, t: NET.t0 } });
-  list.sort((a, b) => (num(a.presence.t) - num(b.presence.t)) || (a.peer < b.peer ? -1 : 1));
-  let maxRound = NET.round;
-  for (const p of list) maxRound = Math.max(maxRound, num(p.presence.round));
-  if (maxRound > NET.round) { NET.round = maxRound; NET.score = 0; NET.pub({ round: NET.round, score: 0 }); if (S.over) { S.over = false; $('#over').hidden = true; } }
-
-  const ids = new Set(list.map(p => p.peer));
-  for (const p of [...S.players]) if (!ids.has(p.id)) removePlayer(p);
-  const ordered = [];
-  for (const pr of list) {
-    const pres = pr.presence;
-    let p = S.byId.get(pr.peer);
-    const color = pr.sameTab ? me.color : safeColor(pres.color);
-    if (!p) {
-      p = addPlayer({ id: pr.peer, name: pr.sameTab ? me.name : safeName(pres.name), color, local: !!pr.sameTab });
-      p.x = pr.sameTab ? NET.x : num(pres.x); p.z = pr.sameTab ? NET.z : num(pres.z);
+function connect({ code, token, id }) {
+  if (NET.es) NET.es.close();
+  Object.assign(NET, { code, token, id, view: null, seenN: 0 });
+  NET.pendingHits = new Set();
+  sessSet({ code, token, id });
+  const es = new EventSource('/events?code=' + encodeURIComponent(code) + '&token=' + encodeURIComponent(token));
+  NET.es = es;
+  es.onmessage = e => { try { onView(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+  es.addEventListener('aim', e => { try { onAim(JSON.parse(e.data)); } catch {} });
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED && NET.es === es) {
+      NET.code = null; sessClear(); es.close(); NET.es = null;
+      showMenu(); toast('Lost the lobby', 'It may have expired. Create a new one.', 2600);
     }
-    if (!pr.sameTab) {
-      p.name = safeName(pres.name);
-      p.x = clamp(num(pres.x, p.x), -60, 60); p.z = clamp(num(pres.z, p.z), -60, 60);
-      p.yaw = num(pres.ay, p.yaw); p.pitch = num(pres.ap, p.pitch);
-      p.score = num(pres.round) === NET.round ? clamp(Math.floor(num(pres.score)), 0, 99) : 0;
-      const th = pres.th;
-      if (th && typeof th === 'object' && typeof th.id === 'string' && NET.seen.get(pr.peer) !== th.id) {
-        NET.seen.set(pr.peer, th.id);
-        enqueueRemoteThrow(p, th);
-      }
-    } else {
-      p.score = NET.score; p.x = NET.x; p.z = NET.z;
-    }
-    NET.T = Math.max(NET.T, Math.floor(num(pres.T)), th_turn(pres) + 1);
-    ordered.push(p);
-  }
-  S.players = ordered;
-  // winner check
-  const w = S.players.find(p => p.score >= WIN_SCORE);
-  if (w && !S.over && !S.busy) gameOver(w);
-  refreshOnlineTurn();
-  renderHUD();
-}
-function th_turn(pres) { return pres.th && typeof pres.th === 'object' ? Math.floor(num(pres.th.turn, -1)) : -1; }
-
-function enqueueRemoteThrow(p, th) {
-  const from = { x: clamp(num(th.x), -60, 60), z: clamp(num(th.z), -60, 60) };
-  const turn = Math.max(0, Math.floor(num(th.turn)));
-  const steps = clamp(Math.floor(num(th.steps, 600)), 1, 1200);
-  const sim = simulate(from, num(th.yaw), clamp(num(th.pitch), PITCH_MIN, PITCH_MAX), clamp(num(th.power), 0, 1), windFor(S.seed, turn), [], S.map, steps);
-  const hitId = typeof th.hit === 'string' ? th.hit : null;
-  p.yaw = num(th.yaw); p.x = from.x; p.z = from.z;
-  startFlight(p, sim, hitId, () => afterFlightOnline());
-}
-
-function afterFlightOnline() { syncOnline(NET.gr ? NET.gr.peers() : []); }
-
-function refreshOnlineTurn() {
-  if (S.mode !== 'online' || S.busy || !S.players.length) return;
-  S.cur = NET.T % S.players.length;
-  S.turn = NET.T;
-  const key = NET.T + ':' + curPlayer().id;
-  if (key !== S.turnKey) { S.turnKey = key; onTurnStart(); }
-}
-
-function onlineTick() {
-  if (S.mode !== 'online' || S.screen !== 'game') return;
-  const p = curPlayer();
-  if (!p || S.busy || S.over) return;
-  const left = TURN_LIMIT - (Date.now() - S.turnSince) / 1000;
-  if (p.local) {
-    if (left <= 0) { S.power = 0.35 + Math.random() * 0.4; throwNow(); }
-    else if (left < 6) sfx.tick();
-  }
-  renderTurnBanner();
+  };
 }
 
 function leaveOnline() {
-  clearInterval(NET.turnTimer);
-  if (NET.gr) NET.gr.leave().catch(() => {});
-  NET.gr = null; NET.code = null;
-  if (NET.lobby) NET.lobby.presence({ game: null }).catch(() => {});
+  const { code, token } = NET;
+  if (NET.es) NET.es.close();
+  NET.es = null; NET.code = null; NET.token = null; NET.view = null;
+  sessClear();
+  if (code && token) fetch('/api/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, token }) }).catch(() => {});
 }
+
+function onAim(d) {
+  const p = d && S.byId.get(d.id);
+  if (!p || (p.local && canControl())) return;
+  p.yaw = num(d.yaw, p.yaw); p.pitch = num(d.pitch, p.pitch);
+}
+
+function onView(v) {
+  if (!v || typeof v !== 'object') return;
+  const first = !NET.view;
+  NET.view = v;
+  if (!v.started) {
+    if (S.mode === 'online') { clearPlayers(); S.mode = null; }
+    showLobby(v);
+    return;
+  }
+  if (S.mode !== 'online' || S.seed !== v.seed) {
+    clearPlayers();
+    setMap(v.seed);
+    S.mode = 'online'; S.over = false; S.turnKey = '';
+    NET.seenN = v.lastThrow ? v.lastThrow.n : 0;
+    showGame();
+  } else if (first) NET.seenN = v.lastThrow ? v.lastThrow.n : 0;
+  syncFromView(v);
+}
+
+function syncFromView(v) {
+  if (S.mode !== 'online') return;
+  const ids = new Set(v.players.map(p => p.id));
+  for (const p of [...S.players]) if (!ids.has(p.id)) removePlayer(p);
+  // a new throw to show?
+  const th = v.lastThrow;
+  const fresh = th && th.n > NET.seenN;
+  const ordered = [];
+  for (const vp of v.players) {
+    let p = S.byId.get(vp.id);
+    if (!p) { p = addPlayer({ id: vp.id, name: safeName(vp.name), color: safeColor(vp.color), local: vp.id === v.you, x: num(vp.x), z: num(vp.z) }); }
+    p.name = safeName(vp.name); p.cpu = !!vp.cpu; p.away = !vp.online;
+    if (!p.hold) { p.x = num(vp.x, p.x); p.z = num(vp.z, p.z); }
+    p.score = clamp(Math.floor(num(vp.score)), 0, 99) - (NET.pendingHits.has(p.id) || (fresh && th.hit && th.by === p.id) ? 1 : 0);
+    if (!(p.local && canControl())) { p.yaw = num(vp.yaw, p.yaw); p.pitch = num(vp.pitch, p.pitch); }
+    ordered.push(p);
+  }
+  S.players = ordered;
+  if (fresh) { NET.seenN = th.n; showServerThrow(th); }
+  S.turn = Math.floor(num(v.turn));
+  S.turnDeadline = v.turnLeft == null ? 0 : Date.now() + num(v.turnLeft);
+  const ci = S.players.findIndex(p => p.id === v.cur);
+  if (!S.busy) S.cur = ci < 0 ? 0 : ci; // keep the thrower highlighted until their snowball lands
+  if (!v.over && S.over) { S.over = false; $('#over').hidden = true; }
+  if (v.over && !S.over && !S.busy) { const w = S.byId.get(v.over.winner); if (w) gameOver(w); }
+  const key = v.round + ':' + v.turn + ':' + v.cur;
+  if (!S.busy && !v.over && key !== S.turnKey) { S.turnKey = key; onTurnStart(); }
+  renderHUD();
+}
+
+function showServerThrow(th) {
+  const thrower = S.byId.get(th.by);
+  if (!thrower) return;
+  const victim = th.hit ? S.byId.get(th.hit) : null;
+  if (victim && th.from) { victim.x = num(th.from.x); victim.z = num(th.from.z); victim.hold = true; }
+  thrower.x = num(th.x); thrower.z = num(th.z); thrower.yaw = num(th.yaw);
+  if (victim) NET.pendingHits.add(thrower.id);
+  const sim = simulate({ x: num(th.x), z: num(th.z) }, num(th.yaw), clamp(num(th.pitch), PITCH_MIN, PITCH_MAX), clamp(num(th.power), 0, 1),
+    windFor(S.seed, Math.floor(num(th.turn))), [], S.map, clamp(Math.floor(num(th.steps, 600)), 1, 1200));
+  startFlight(thrower, sim, victim ? victim.id : null, () => {
+    NET.pendingHits.delete(thrower.id);
+    if (victim) victim.hold = false;
+    if (NET.view) syncFromView(NET.view);
+  });
+}
+
+/* ---------- lobby screen ---------- */
+function inviteLink(code) { return location.origin + location.pathname + '?room=' + code; }
+function showLobby(v) {
+  S.screen = 'lobby'; S.camMode = 'orbit';
+  $('#menu').hidden = true; $('#game').hidden = true; $('#over').hidden = true; $('#lobby').hidden = false;
+  $('#lobbyCode').textContent = v.code;
+  $('#lobbyLink').textContent = inviteLink(v.code);
+  const isHost = v.host === v.you;
+  const ul = $('#lobbyList'); ul.textContent = '';
+  for (const p of v.players) {
+    const li = document.createElement('li');
+    const d = document.createElement('span'); d.className = 'dot'; d.style.background = safeColor(p.color);
+    const n = document.createElement('span'); n.textContent = safeName(p.name) + (p.id === v.you ? ' (you)' : '');
+    li.append(d, n);
+    if (p.id === v.host) { const c = document.createElement('span'); c.className = 'crown'; c.textContent = 'Host'; li.appendChild(c); }
+    if (p.cpu) { const c = document.createElement('span'); c.className = 'tagcpu'; c.textContent = 'Computer'; li.appendChild(c); }
+    else if (!p.online) { const c = document.createElement('span'); c.className = 'tagcpu'; c.textContent = 'Away'; li.appendChild(c); }
+    if (isHost && p.cpu) {
+      const x = document.createElement('button'); x.className = 'x'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove ' + safeName(p.name));
+      x.onclick = () => api('removeBot', { id: p.id }).catch(e => toast(e.message, '', 1800));
+      li.appendChild(x);
+    }
+    ul.appendChild(li);
+  }
+  $('#hostRow').hidden = !isHost;
+  $('#lobbyBot').disabled = v.players.length >= 8;
+  $('#lobbyStart').hidden = !isHost;
+  $('#lobbyStart').disabled = v.players.length < 2;
+  $('#lobbyNote').textContent = isHost
+    ? (v.players.length < 2 ? 'Waiting for friends. Share the code, or add a computer player.' : 'Everyone here? Start when you are ready.')
+    : 'Waiting for the host to start the game.';
+}
+$('#lobbyBot').onclick = () => api('addBot').catch(e => toast(e.message, '', 1800));
+$('#lobbyStart').onclick = () => { audio(); api('start').catch(e => toast(e.message, '', 1800)); };
+$('#lobbyLeave').onclick = showMenu;
+$('#copyLink').onclick = () => {
+  const link = inviteLink(NET.code || '');
+  navigator.clipboard.writeText(link).then(() => toast('Invite link copied', '', 1200), () => {
+    const r = document.createRange(); r.selectNodeContents($('#lobbyLink')); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    toast('Link selected, copy it from there', '', 1600);
+  });
+};
 
 /* =========================================================
    Menu
@@ -908,11 +855,11 @@ function renderRoster() {
 $('#nameIn').value = me.name;
 $('#nameIn').addEventListener('input', () => { saveMe(); renderRoster(); });
 $('#addHuman').onclick = () => { const k = localRoster.filter(r => !r.cpu).length + 1; localRoster.push({ name: 'Player ' + k, color: nextFreeColor(), cpu: false }); renderRoster(); };
-$('#addCpu').onclick = () => { const used = new Set(localRoster.map(r => r.name)); localRoster.push({ name: CPU_NAMES.find(n => !used.has(n)) || 'Snowbot', color: nextFreeColor(), cpu: true }); renderRoster(); };
+$('#addCpu').onclick = () => { const used = new Set(localRoster.map(r => r.name)); localRoster.push({ name: BOT_NAMES.find(n => !used.has(n)) || 'Snowbot', color: nextFreeColor(), cpu: true }); renderRoster(); };
 $('#startLocal').onclick = () => { saveMe(); audio(); startLocal(); };
-$('#hostBtn').onclick = () => joinRoom(randCode());
-$('#joinBtn').onclick = () => joinRoom($('#codeIn').value);
-$('#codeIn').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('#codeIn').value); });
+$('#hostBtn').onclick = hostLobby;
+$('#joinBtn').onclick = () => joinLobby($('#codeIn').value);
+$('#codeIn').addEventListener('keydown', e => { if (e.key === 'Enter') joinLobby($('#codeIn').value); });
 renderSwatches(); renderRoster();
 
 function startLocal() {
@@ -930,12 +877,11 @@ function startLocal() {
   onTurnStart();
 }
 
-function showGame() { S.screen = 'game'; $('#menu').hidden = true; $('#game').hidden = false; $('#over').hidden = true; canvas.focus({ preventScroll: true }); renderHUD(); }
+function showGame() { S.screen = 'game'; $('#menu').hidden = true; $('#lobby').hidden = true; $('#game').hidden = false; $('#over').hidden = true; canvas.focus({ preventScroll: true }); renderHUD(); }
 function showMenu() {
-  if (S.mode === 'online') leaveOnline();
+  if (NET.code) leaveOnline();
   clearPlayers(); S.mode = null; S.screen = 'menu'; S.camMode = 'orbit'; S.over = false;
-  $('#menu').hidden = false; $('#game').hidden = true; $('#over').hidden = true;
-  renderOpenGames();
+  $('#menu').hidden = false; $('#lobby').hidden = true; $('#game').hidden = true; $('#over').hidden = true;
 }
 $('#menuBtn').onclick = showMenu;
 $('#overMenuBtn').onclick = showMenu;
@@ -946,9 +892,7 @@ $('#againBtn').onclick = () => {
     for (const p of S.players) { p.score = 0; const sp = spawnPoint(Math.random, S.map, placed); placed.push(sp); p.x = sp.x; p.z = sp.z; }
     nextLocalTurn();
   } else if (S.mode === 'online') {
-    NET.round += 1; NET.score = 0; NET.pub({ round: NET.round, score: 0 });
-    for (const p of S.players) p.score = 0;
-    renderHUD();
+    api('again').catch(e => toast(e.message, '', 1800));
   }
 };
 $('#muteBtn').onclick = () => { muted = !muted; lsSet('sb_muted', muted); $('#muteBtn').textContent = muted ? '✕' : '♪'; };
@@ -963,7 +907,7 @@ function renderHUD() {
   S.players.forEach((p, i) => {
     const d = document.createElement('div'); d.className = 'sc' + (i === S.cur ? ' cur' : '');
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = p.color;
-    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (S.mode === 'online' && p.local ? ' (you)' : '');
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (S.mode === 'online' && p.local ? ' (you)' : '') + (p.away ? ' (away)' : '');
     const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = p.score;
     d.append(dot, nm, pts); box.appendChild(d);
   });
@@ -984,10 +928,9 @@ function renderTurnBanner() {
   else main = p.name + ' is aiming…';
   $('#turnMain').textContent = main;
   if (S.mode === 'online') {
-    const left = Math.max(0, Math.ceil(TURN_LIMIT - (Date.now() - S.turnSince) / 1000));
-    let sub = 'Room ' + NET.code;
-    if (S.players.length < 2) sub += ' · share this code with friends';
-    else if (!S.busy && !S.over) sub += ' · ' + left + 's';
+    const left = Math.max(0, Math.ceil((S.turnDeadline - Date.now()) / 1000));
+    let sub = 'Lobby ' + NET.code;
+    if (!S.busy && !S.over && S.turnDeadline && left <= TURN_LIMIT) sub += ' · ' + left + 's';
     $('#turnSub').textContent = sub;
   }
 }
@@ -1047,7 +990,7 @@ function updateAim(dt) {
     if (Math.abs(angDiff(p.yaw, S.aimYaw)) > 1e-4 || Math.abs(p.pitch - S.aimPitch) > 1e-4) {
       p.yaw = S.aimYaw; p.pitch = S.aimPitch;
       const now = performance.now();
-      if (S.mode === 'online' && now - lastAimPub > 60) { lastAimPub = now; NET.pub({ ay: +p.yaw.toFixed(3), ap: +p.pitch.toFixed(3) }); }
+      if (S.mode === 'online' && now - lastAimPub > 100) { lastAimPub = now; sendAim(true); }
     }
   }
   if (S.charging) {
