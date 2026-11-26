@@ -151,7 +151,7 @@ test('a heavy snowball flies a bit shorter and the wind moves it less', () => {
 });
 
 // ---------- realtime rules (public/shared/realtimeRules.js) ----------
-import { newBall, stepBall, moveStep, canStep, pathClear, botAim, ballSpot, ballsOnMap, RUN_SPEED, SPRINT_SPEED, THROW_POWER } from '../public/shared/realtimeRules.js';
+import { newBall, stepBall, moveStep, canStep, pathClear, botAim, ballSpot, pilesOnMap, pileSize, RUN_SPEED, SPRINT_SPEED, THROW_POWER } from '../public/shared/realtimeRules.js';
 
 test('a realtime snowball follows exactly the path simulate() draws', () => {
   const map = makeMap(99);
@@ -183,7 +183,11 @@ test('running slides along walls and never ends up inside one', () => {
   assert.ok(Math.abs(one.x - 10 - RUN_SPEED * 0.5) < 1e-9, 'runs at RUN_SPEED');
   const fast = moveStep({ x: 10, z: 10 }, 1, 0, 0.5, EMPTY, [], SPRINT_SPEED);
   assert.ok(Math.abs(fast.x - 10 - SPRINT_SPEED * 0.5) < 1e-9, 'sprints at SPRINT_SPEED');
-  assert.ok(ballsOnMap(2, { size: 60 }) >= 15 && ballsOnMap(16, { size: 60 }) > ballsOnMap(2, { size: 60 }), 'plenty of snowballs on the big map');
+  assert.ok(pilesOnMap(2, { size: 60 }) >= 30 && pilesOnMap(16, { size: 60 }) > pilesOnMap(2, { size: 60 }), 'plenty of snowball piles on the big map');
+  const sizes = Array.from({ length: 2000 }, ((r) => () => pileSize(r))(mulberry32(5)));
+  assert.ok(sizes.every((n) => n >= 1 && n <= 3) && sizes.includes(2) && sizes.includes(3), 'piles of 1 to 3');
+  const avg = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+  assert.ok(avg > 1.6 && avg < 1.8, `about 1.7 snowballs per pile (${avg.toFixed(2)})`);
   assert.ok(pathClear({ x: 10, z: 0 }, { x: 10, z: 6 }, map));
   assert.ok(!pathClear({ x: 0, z: 0 }, { x: 0, z: 5 }, map), 'a straight line through the wall is not');
 });

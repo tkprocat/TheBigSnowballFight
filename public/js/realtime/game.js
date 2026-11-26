@@ -37,18 +37,30 @@ initInput({ throwNow });
 // Loose snowballs get a gold ring on the snow, so they don't look like the piles behind the walls.
 const pickRingGeo = new THREE.RingGeometry(0.32, 0.42, 28);
 const pickRingMat = new THREE.MeshBasicMaterial({ color: 0xffc83a, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+// A pile of 1-3 snowballs: one, two side by side, or two with one on top.
+const PILE_SPOTS = [[], [[0, 0, 0]], [[-0.17, 0, 0], [0.17, 0, 0.04]], [[-0.17, 0, 0], [0.17, 0, 0.04], [0, 0.26, 0.02]]];
+function makePile(n) {
+  const g = new THREE.Group();
+  for (const [x, y, z] of PILE_SPOTS[n]) { const m = makeBallMesh(1.4); m.position.set(x, y, z); g.add(m); }
+  scene.add(g);
+  return g;
+}
 function syncLoose(list) {
   const ids = new Set();
   for (const row of list) {
     if (!Array.isArray(row)) continue;
-    const [id, x, z] = row; ids.add(id);
-    if (!R.loose.has(id)) {
-      const mesh = makeBallMesh(1.4);
+    const [id, x, z] = row, n = clamp(Math.floor(num(row[3], 1)), 1, 3); ids.add(id);
+    let b = R.loose.get(id);
+    if (b && b.n !== n) { removeMesh(b.mesh); b.mesh = makePile(n); b.mesh.position.set(b.x, 0.2, b.z); b.n = n; } // someone took some
+    if (!b) {
+      const mesh = makePile(n);
       mesh.position.set(num(x), 0.2, num(z));
+      mesh.rotation.y = (id * 2.3) % 6.28;
       const ringMesh = new THREE.Mesh(pickRingGeo, pickRingMat);
       ringMesh.rotation.x = -Math.PI / 2; ringMesh.position.set(num(x), 0.04, num(z));
+      ringMesh.scale.setScalar(n > 1 ? 1.25 : 1);
       scene.add(ringMesh);
-      R.loose.set(id, { x: num(x), z: num(z), mesh, ring: ringMesh });
+      R.loose.set(id, { x: num(x), z: num(z), n, mesh, ring: ringMesh });
     }
   }
   for (const [id, b] of R.loose) if (!ids.has(id)) { removeMesh(b.mesh); removeMesh(b.ring); R.loose.delete(id); }
