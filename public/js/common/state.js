@@ -7,5 +7,5 @@ export const S = {
   players: [], byId: new Map(),
   over: false,
   watching: false,    // spectating: no player of our own
-  follow: 0,          // which player a spectator's camera follows
+  followId: null,     // the player a spectator's camera follows (Tab, or tap a name); null = the default
 };

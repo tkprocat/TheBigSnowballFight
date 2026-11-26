@@ -186,18 +186,23 @@ function updatePreview() {
   markerMat.color.set(0xffc83a);
 }
 
-const want = new THREE.Vector3(), look = new THREE.Vector3();
+const want = new THREE.Vector3(), look = new THREE.Vector3(), ahead = new THREE.Vector3();
+const SHOULDER = 0.85; // metres the camera sits to the right of the player
 function updateCamera(dt) {
   const p = followed();
   if (!p) return;
   const yaw = p.local ? R.yaw : p.yaw, pitch = p.local ? R.pitch : p.pitch;
   const ax = p.avatar.position.x, az = p.avatar.position.z;
-  // behind the thrower, tilting a little with the aim so a high lob looks up
+  // over the right shoulder (so your own body doesn't hide what you aim at), tilting a little with the aim so a
+  // high lob looks up. The camera and its look point shift sideways together, so the view stays parallel to the aim.
   const tilt = clamp((pitch - 0.35) * 4, -1, 3);
-  want.set(ax - Math.sin(yaw) * 6, 3.4 - tilt * 0.3, az - Math.cos(yaw) * 6);
-  look.set(ax + Math.sin(yaw) * 12, 1.2 + tilt, az + Math.cos(yaw) * 12);
+  const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = -fz * SHOULDER, rz = fx * SHOULDER;
+  want.set(ax - fx * 6 + rx, 3.7 - tilt * 0.3, az - fz * 6 + rz);
+  look.set(ax + fx * 12 + rx, 1.2 + tilt, az + fz * 12 + rz);
   easeCamera(want, look, p.local ? 14 : 6, dt);
-  fadeBlockingTrees(p.avatar.position, dt);
+  // trees between the camera and a point a little ahead of you fade, so they don't hide you or your aim
+  ahead.set(ax + fx * 7, 0, az + fz * 7);
+  fadeBlockingTrees(ahead, dt);
   const s = 1 + Math.sin(performance.now() / 250) * 0.08;
   ring.visible = !!p.local; ring.position.set(ax, 0.04, az); ring.scale.set(s, s, s);
 }
@@ -208,6 +213,7 @@ export default {
     preview.visible = marker.visible = false;
   },
   onView: syncFromView,
+  onFollow() { renderHUD(true); },
   onEvent(name, d) {
     if (name !== 'rt') return;
     applySnapshot(d, onEvents, syncLoose);

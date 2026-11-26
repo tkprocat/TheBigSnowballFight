@@ -276,8 +276,8 @@ export function fadeBlockingTrees(target, dt) {
     // closest point on the camera-to-target line (seen from above), and how far the tree is from it
     const k = Math.max(0, Math.min(1, ((t.x - c.x) * dx + (t.z - c.z) * dz) / len2));
     const d = Math.hypot(c.x + dx * k - t.x, c.z + dz * k - t.z);
-    const blocks = d < t.r && k < 0.97 && c.y < t.top + 1;
-    const want = blocks ? 0.22 : 1;
+    const blocks = d < t.r && k < 1 && c.y < t.top + 1;
+    const want = blocks ? 0.1 : 1;
     if (Math.abs(t.alpha - want) < 0.005) continue;
     t.alpha += (want - t.alpha) * Math.min(1, dt * 8);
     if (Math.abs(t.alpha - want) < 0.01) t.alpha = want;

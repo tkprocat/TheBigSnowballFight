@@ -4,7 +4,7 @@ import { CARRY_MAX } from '../../shared/realtimeRules.js';
 import { S } from '../common/state.js';
 import { $ } from '../common/dom.js';
 import { NET } from '../common/net.js';
-import { renderScores } from '../common/players.js';
+import { renderScores, followed, watchHint } from '../common/players.js';
 import { R, me, canPlay } from './state.js';
 import { locked } from './input.js';
 
@@ -14,10 +14,10 @@ let lastKey = '';
 export function renderHUD(force = false) {
   if (S.screen !== 'game' || S.mode !== 'realtime') return;
   const p = me();
-  const key = S.players.map((q) => q.id + q.score + (q.away ? 'a' : '')).join() + (p ? p.ammo : '') + S.over + S.watching;
+  const key = S.players.map((q) => q.id + q.score + (q.away ? 'a' : '')).join() + (p ? p.ammo : '') + S.over + S.watching + S.followId;
   if (!force && key === lastKey) return;
   lastKey = key;
-  renderScores({ sorted: true, cur: p, limit: innerWidth < 520 ? 4 : 8 });
+  renderScores({ sorted: true, cur: p, follow: S.watching ? followed() : null, limit: innerWidth < 520 ? 4 : 8, keep: [p, S.watching ? followed() : null] });
   const box = $('#ammo'); box.textContent = '';
   box.hidden = !p;
   if (p) {
@@ -38,7 +38,7 @@ export function updateReadout() {
   else if (p && p.ammo === 0) main = 'Pick up snowballs!';
   else main = 'First to ' + WIN_SCORE;
   if ($('#turnMain').textContent !== main) $('#turnMain').textContent = main;
-  const sub = 'Lobby ' + NET.code + (S.watching ? ' · watching (Tab: next player)' : '');
+  const sub = 'Lobby ' + NET.code + (S.watching ? ' · ' + watchHint() : '');
   if ($('#turnSub').textContent !== sub) $('#turnSub').textContent = sub;
   $('#meter').style.visibility = 'hidden';
   $('#angleTxt').textContent = 'Angle ' + Math.round(R.pitch * 180 / Math.PI) + '°';

@@ -3,14 +3,17 @@ import { TURN_LIMIT, HEAVY_MULT, MOVE_RADIUS } from '../../shared/physics.js';
 import { S } from '../common/state.js';
 import { $ } from '../common/dom.js';
 import { NET } from '../common/net.js';
-import { renderScores } from '../common/players.js';
+import { renderScores, followed, watchHint } from '../common/players.js';
 import { T, curPlayer, nextPlayer, currentWind, canControl, canMove, hiddenFromNext } from './state.js';
 
 export function renderHUD() {
   if (S.screen !== 'game' || S.mode !== 'turn') return;
   const cur = curPlayer(), next = nextPlayer();
+  const me = S.players.find((p) => p.local);
   renderScores({
-    cur,
+    cur, follow: S.watching ? followed() : null,
+    // with lots of players: whoever's turn it is, who's next, you, then the leaders
+    limit: innerWidth < 520 ? 5 : 8, keep: [cur, next, me],
     tags: (p) => [
       ...(p.heavy > 1 ? [['heavytag', '×' + p.heavy]] : []),
       ...(p === next && p !== cur ? [['nexttag', 'next']] : []),
@@ -48,7 +51,7 @@ function renderTurnBanner() {
   else main = p.name + (T.phase === 'move' ? ' is moving…' : ' is aiming…');
   $('#turnMain').textContent = main;
   const left = Math.max(0, Math.ceil((T.turnDeadline - Date.now()) / 1000));
-  let sub = 'Lobby ' + NET.code + (S.watching ? ' · watching (Tab: next player)' : '');
+  let sub = 'Lobby ' + NET.code + (S.watching ? ' · ' + watchHint() : '');
   if (!T.busy && !S.over && T.turnDeadline && left <= TURN_LIMIT) sub += ' · ' + left + 's';
   $('#turnSub').textContent = sub;
 }

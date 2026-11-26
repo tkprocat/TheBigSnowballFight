@@ -141,3 +141,7 @@ body.watching #controls,body.watching #hint{display:none!important}
 @media (hover:hover) and (pointer:fine){#stick{display:none}}
 @media (max-width:520px){#stick{width:104px;height:104px}}
 @media (max-width:520px){#turnHud{top:auto;bottom:calc(var(--sab) + 150px)}#turnMain{font-size:1.25rem}}
+
+/* spectators pick who to follow from the score list */
+#scoreHud.pick .sc{cursor:pointer}
+.sc.follow{box-shadow:0 0 0 3px #2f7de1,0 3px 10px rgba(20,35,61,.15)}

@@ -41,7 +41,7 @@ Lobbies live in memory, so a restart ends games in progress.
 
 Press **Create a lobby** and send friends the 4-letter code or the invite link (`?room=CODE`). The host picks the mode, can add computer players, and starts the game. Friends can join a game that's already going. Playing alone? Create a lobby and add computer players.
 
-Anyone in the lobby can press **Watch instead** to give up their seat and spectate (Tab follows the next player). The host stays host while watching, so for testing you can watch bots play each other. Someone joining a full room (16 seated players) becomes a spectator.
+Anyone in the lobby can press **Watch instead** to give up their seat and spectate (Tab, or tap or click a name in the score list, to follow someone). The host stays host while watching, so for testing you can watch bots play each other. Someone joining a full room (16 seated players) becomes a spectator.
 
 In turn-based, each turn has a 30 second limit; if time runs out, the game throws for you. Your direction and angle stay where you left them after each throw, and a dark mark on the power meter shows your last power.
 

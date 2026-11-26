@@ -39,13 +39,24 @@ export function canStep(from, to, map, others) {
 
 // Run for dt seconds in direction (dx, dz) (length up to 1) at `speed`, sliding along anything in the way.
 // Returns the new spot; `p` is not changed.
+// Blocked? Try the step turned a little to either side and shortened by how far it turned (like sliding along a
+// surface at any angle). Walking straight into a wall still stops you; walking into it at an angle slides.
+const SLIDE_ANGLES = [0.25, 0.5, 0.75, 1.0, 1.25, 1.45];
 export function moveStep(p, dx, dz, dt, map, others = [], speed = RUN_SPEED) {
   const len = Math.hypot(dx, dz);
   if (len < 1e-6 || dt <= 0) return { x: p.x, z: p.z };
   const k = speed * dt / Math.max(1, len);
   const sx = dx * k, sz = dz * k;
-  for (const to of [{ x: p.x + sx, z: p.z + sz }, { x: p.x + sx, z: p.z }, { x: p.x, z: p.z + sz }])
-    if (canStep(p, to, map, others)) return to;
+  const full = { x: p.x + sx, z: p.z + sz };
+  if (canStep(p, full, map, others)) return full;
+  for (const a of SLIDE_ANGLES) {
+    const c = Math.cos(a), s = Math.sin(a);
+    for (const sign of [1, -1]) {
+      const rx = (sx * c - sz * s * sign) * c, rz = (sx * s * sign + sz * c) * c;
+      const to = { x: p.x + rx, z: p.z + rz };
+      if (canStep(p, to, map, others)) return to;
+    }
+  }
   return { x: p.x, z: p.z };
 }
 

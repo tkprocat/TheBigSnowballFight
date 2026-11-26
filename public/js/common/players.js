@@ -25,13 +25,20 @@ export function clearPlayers() { for (const p of [...S.players]) removePlayer(p)
 // `size`: 'small' (turn-based) or 'large' (realtime); `piles`: decorative snowballs behind the walls.
 export function setMap(seed, size = 'small', piles = true) { S.seed = seed; S.map = makeMap(seed, size); buildMapMeshes(S.map, piles); }
 
-// The player the camera is on: your own, or for a spectator whoever they follow (Tab cycles).
+// The player the camera is on: your own, or for a spectator whoever they follow (Tab, or tap their name).
 export function followed() {
   const mine = S.players.find((p) => p.local);
   if (mine) return mine;
-  if (!S.players.length) return null;
-  return S.players[((S.follow % S.players.length) + S.players.length) % S.players.length];
+  return S.byId.get(S.followId) || S.players[0] || null;
 }
+// Spectators: follow the next player (Tab).
+export function followNext() {
+  if (!S.players.length) return;
+  const i = S.players.indexOf(followed());
+  S.followId = S.players[(i + 1) % S.players.length].id;
+}
+const coarse = matchMedia('(pointer: coarse)');
+export const watchHint = () => 'watching (' + (coarse.matches ? 'tap a name to follow' : 'Tab or click a name to follow') + ')';
 
 // Show a quick-chat line or an emote over a player.
 export function showSay(p, what, lines) {
@@ -99,15 +106,22 @@ export function updateTags(hide, label) {
   }
 }
 
-// The score list at the top left. `o.cur` gets the gold outline; `o.tags(p)` adds small labels after the name;
-// `o.sorted` puts the leader first; `o.limit` shows at most that many rows (always including `o.cur`).
+// The score list at the top left. `o.cur` gets the gold outline; `o.follow` (spectators) gets a blue one;
+// `o.tags(p)` adds small labels after the name; `o.sorted` puts the leader first; `o.limit` shows at most that
+// many rows, always including the players in `o.keep` and then the leaders. Spectators tap a row to follow.
 export function renderScores(o = {}) {
   const box = $('#scoreHud'); box.textContent = '';
   let list = o.sorted ? [...S.players].sort((a, b) => b.score - a.score) : S.players;
-  // with lots of players, show the leaders and yourself
-  if (o.limit && list.length > o.limit) { const top = list.slice(0, o.limit); if (o.cur && !top.includes(o.cur)) top[o.limit - 1] = o.cur; list = top; }
+  if (o.limit && list.length > o.limit) {
+    const keep = new Set((o.keep || []).filter(Boolean));
+    const byScore = [...list].sort((a, b) => b.score - a.score);
+    for (const p of byScore) { if (keep.size >= o.limit) break; keep.add(p); }
+    list = list.filter((p) => keep.has(p));
+  }
+  box.classList.toggle('pick', S.watching);
   for (const p of list) {
-    const d = document.createElement('div'); d.className = 'sc' + (p === o.cur ? ' cur' : '');
+    const d = document.createElement('div'); d.className = 'sc' + (p === o.cur ? ' cur' : '') + (p === o.follow ? ' follow' : '');
+    d.dataset.id = p.id;
     const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = p.color;
     const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.name + (p.local ? ' (you)' : '') + (p.away ? ' (away)' : '');
     const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = p.score;
