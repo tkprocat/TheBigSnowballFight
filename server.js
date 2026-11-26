@@ -7,7 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  TAU, DT, PITCH_MIN, PITCH_MAX, WIN_SCORE, TURN_LIMIT, MAX_PLAYERS, COLORS, BOT_NAMES,
+  TAU, DT, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, TURN_LIMIT, MAX_PLAYERS, COLORS, BOT_NAMES,
   clamp, makeMap, simulate, windFor, spawnPoint, planThrow, throwShowMs, clampMove, standOk, chooseCover,
 } from './public/physics.js';
 
@@ -154,10 +154,10 @@ function doThrow(room, p, yaw, pitch, power) {
   p.yaw = yaw; p.pitch = pitch;
   room.lastThrow = {
     n: ++room.throwN, by: p.id, turn: room.turn, yaw, pitch, power, x: p.x, z: p.z,
-    hit: victim ? victim.id : null, steps: sim.n - 1, from: victim ? { x: victim.x, z: victim.z } : null,
+    hit: victim ? victim.id : null, part: victim ? sim.part : null, steps: sim.n - 1, from: victim ? { x: victim.x, z: victim.z } : null,
   };
-  room.busyUntil = Date.now() + throwShowMs(sim.n - 1, !!victim);
-  if (victim) { p.score += 1; place(room, victim); }
+  room.busyUntil = Date.now() + throwShowMs(sim.n - 1, victim ? sim.part : null);
+  if (victim) { p.score += HIT_POINTS[sim.part]; place(room, victim); }
   room.lastActive = Date.now();
   if (p.score >= WIN_SCORE) {
     room.over = { winner: p.id };

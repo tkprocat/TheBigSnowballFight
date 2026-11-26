@@ -70,24 +70,32 @@ test('throws: only on your turn, results decided by the server, turn moves on', 
   assert.ok(others.length === 2);
 });
 
-test('a hit scores, moves the victim, and the 5th hit wins the round', () => {
+test('hits score by body part, move the victim, and reaching 10 wins the round', () => {
   const { host, room } = lobby(2);
   act('start', host.code, host.token);
+  room.map = { walls: [], trees: [], deco: [] };
   const [a, b] = room.players;
-  for (let i = 0; i < 5; i++) {
-    // stand b 3 m in front of a, then find a gentle lob that hits
+  const parts = new Set();
+  let guard = 0;
+  while (!room.over && guard++ < 50) {
+    // stand b 3 m in front of a, then find a lob that hits
     let hit = false;
-    for (let pw = 0; pw <= 1 && !hit; pw += 0.02) {
-      room.cur = 0; room.busyUntil = 0;
+    for (let pw = 0; pw <= 1 && !hit && !room.over; pw += 0.02) {
+      room.cur = 0; room.busyUntil = 0; room.phase = 'aim';
       b.x = a.x; b.z = a.z + 3;
-      act('throw', host.code, a.token, { yaw: 0, pitch: 0.3, power: pw });
+      const before = a.score;
+      act('throw', host.code, a.token, { yaw: 0, pitch: 0.2 + (guard % 3) * 0.12, power: pw });
       hit = room.lastThrow.hit === b.id;
+      if (hit) {
+        parts.add(room.lastThrow.part);
+        assert.strictEqual(a.score - before, room.lastThrow.part === 'head' ? 2 : 1);
+        assert.deepStrictEqual(room.lastThrow.from, { x: a.x, z: a.z + 3 });
+        assert.ok(Math.hypot(b.x - a.x, b.z - (a.z + 3)) > 0.01, 'victim moved');
+      } else assert.strictEqual(room.lastThrow.part, null);
     }
-    assert.ok(hit, 'found a hitting throw');
-    assert.deepStrictEqual(room.lastThrow.from, { x: a.x, z: a.z + 3 });
-    assert.ok(Math.hypot(b.x - a.x, b.z - (a.z + 3)) > 0.01, 'victim moved');
   }
-  assert.strictEqual(a.score, 5);
+  assert.ok(a.score >= 10);
+  assert.ok(parts.has('head') || parts.has('body'));
   assert.deepStrictEqual(room.over, { winner: a.id });
   assert.throws(() => act('throw', host.code, b.token, { yaw: 0, pitch: 0.5, power: 0.5 }), /over/);
   assert.throws(() => act('again', host.code, b.token), /Only the host/);

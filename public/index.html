@@ -101,6 +101,8 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 
 #toast{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%) scale(.9);font-family:var(--display);font-size:clamp(1.6rem,7vw,3rem);color:#fff;text-shadow:0 3px 0 rgba(20,35,61,.45),0 6px 20px rgba(20,35,61,.45);opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;text-align:center;max-width:90vw}
 #toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 0 0 rgba(10,18,32,.9);transition:box-shadow .25s}
+body.killcam::after{box-shadow:inset 0 11vh 0 0 rgba(10,18,32,.92),inset 0 -11vh 0 0 rgba(10,18,32,.92)}
 #toast small{display:block;font-family:var(--body);font-weight:900;font-size:1rem}
 
 #over{position:fixed;inset:0;display:grid;place-items:center;background:rgba(20,35,61,.35);padding-left:var(--sal);padding-right:var(--sar)}
@@ -118,7 +120,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
   <div class="panel">
     <div class="brand">
       <h1>The Big Snowball Fight</h1>
-      <p>Duck behind cover, pick your angle, time your power, mind the wind. First to 5 hits wins.</p>
+      <p>Duck behind cover, pick your angle, time your power, mind the wind. Head hits score 2, body hits 1. First to 10 wins.</p>
     </div>
     <div class="card">
       <span class="lbl">Your snowfighter</span>
@@ -207,7 +209,7 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
-import { clamp, lerp, TAU, angDiff, mulberry32, DT, BALL_R, PITCH_MIN, PITCH_MAX, WIN_SCORE, TURN_LIMIT, COLORS, BOT_NAMES, makeMap, simulate, windFor, spawnPoint, planThrow, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover } from './physics.js';
+import { clamp, lerp, TAU, angDiff, mulberry32, DT, BALL_R, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, SLOW_WINDOW, SLOW_SPEED, HOLD_MS, TURN_LIMIT, COLORS, BOT_NAMES, makeMap, simulate, windFor, spawnPoint, planThrow, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover } from './physics.js';
 
 /* =========================================================
    Utilities
@@ -406,9 +408,10 @@ function makeAvatar(color) {
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), MAT.skin); head.position.y = 1.72; body.add(head);
   for (const sx of [-0.1, 0.1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), MAT.black); e.position.set(sx, 1.76, 0.27); body.add(e); }
   const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), MAT.carrot); cheek.position.set(0, 1.69, 0.3); body.add(cheek);
-  const hat = new THREE.Mesh(new THREE.SphereGeometry(0.315, 18, 10, 0, TAU, 0, Math.PI / 2), hatMat); hat.position.y = 1.77; body.add(hat);
-  const brim = new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.06, 8, 20), hatMat); brim.rotation.x = Math.PI / 2; brim.position.y = 1.78; body.add(brim);
-  const pom = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), MAT.snow); pom.position.y = 2.1; body.add(pom);
+  const hatGroup = new THREE.Group(); hatGroup.position.y = 1.77; body.add(hatGroup); // pops off on a head shot
+  const hat = new THREE.Mesh(new THREE.SphereGeometry(0.315, 18, 10, 0, TAU, 0, Math.PI / 2), hatMat); hatGroup.add(hat);
+  const brim = new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.06, 8, 20), hatMat); brim.rotation.x = Math.PI / 2; brim.position.y = 0.01; hatGroup.add(brim);
+  const pom = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), MAT.snow); pom.position.y = 0.33; hatGroup.add(pom);
   const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 8, 20), scarfMat); scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.46; body.add(scarf);
   const tail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.4, 0.06), scarfMat); tail.position.set(0.15, 1.25, 0.3); tail.rotation.z = 0.2; body.add(tail);
   const arms = [];
@@ -422,7 +425,7 @@ function makeAvatar(color) {
   const handBall = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 10, 8), MAT.snow); handBall.position.y = -0.62; arms[0].add(handBall);
   const splat = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), MAT.snow); splat.scale.set(1, 1, 0.4); splat.position.set(0, 1.1, 0.38); splat.visible = false; body.add(splat);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  g.userData = { body, throwArm: arms[0], handBall, splat };
+  g.userData = { body, throwArm: arms[0], handBall, splat, hat: hatGroup };
   scene.add(g);
   return g;
 }
@@ -455,6 +458,7 @@ const sfx = {
   hit: () => { noise(0.25, 1200, 300, 0.9, 0.6); tone(520, 0.15, 0.15, 'triangle', 780); setTimeout(() => tone(780, 0.2, 0.12, 'triangle', 1040), 110); },
   win: () => [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.3, 0.15, 'triangle'), i * 140)),
   tick: () => tone(900, 0.05, 0.05, 'square'),
+  crit: () => { tone(220, 0.5, 0.2, 'sawtooth', 110); setTimeout(() => [880, 1175, 1568].forEach((f, i) => setTimeout(() => tone(f, 0.25, 0.12, 'triangle'), i * 90)), 150); },
 };
 
 /* =========================================================
@@ -569,8 +573,8 @@ function throwNow() {
       .finally(() => { S.sending = false; });
   } else {
     const sim = simulate(p, p.yaw, p.pitch, power, currentWind(), opponentsOf(p).map(o => ({ id: o.id, x: o.x, z: o.z })), S.map);
-    startFlight(p, sim, sim.hit, () => {
-      if (sim.hit) p.score++;
+    startFlight(p, sim, sim.hit, sim.part, () => {
+      if (sim.hit) p.score += HIT_POINTS[sim.part];
       renderHUD();
       if (p.score >= WIN_SCORE) return gameOver(p);
       nextLocalTurn();
@@ -578,8 +582,9 @@ function throwNow() {
   }
 }
 
-function startFlight(thrower, sim, hitId, onDone) {
-  S.flights.push({ thrower, sim, hitId, onDone, t: 0, phase: 'fly', hold: 0 });
+function startFlight(thrower, sim, hitId, part, onDone) {
+  const flightT = (sim.n - 1) * DT;
+  S.flights.push({ thrower, sim, hitId, part: hitId ? part : null, onDone, t: 0, phase: 'fly', hold: 0, slowFrom: part === 'head' && hitId ? Math.max(0, flightT - SLOW_WINDOW) : Infinity });
   S.busy = true;
   thrower.armT = 0.35;
   sfx.throw();
@@ -589,19 +594,29 @@ function updateFlights(dt) {
   const f = S.flights[0];
   if (!f) { ball.visible = false; return; }
   if (f.phase === 'fly') {
-    f.t += dt;
-    if (f.thrower.armT > 0.25) { ball.visible = false; return; }
+    if (f.thrower.armT > 0.25) { f.t += dt; ball.visible = false; return; }
+    // critical-hit camera: the last stretch of a head shot plays slowed down
+    const slow = f.t >= f.slowFrom;
+    f.t += dt * (slow ? SLOW_SPEED : 1);
+    document.body.classList.toggle('killcam', slow);
     const i = Math.min(f.sim.n - 1, Math.floor(f.t / DT));
     ball.visible = true;
     ball.position.set(f.sim.pts[i * 3], f.sim.pts[i * 3 + 1], f.sim.pts[i * 3 + 2]);
     if (i >= f.sim.n - 1) {
-      f.phase = 'impact'; f.hold = f.hitId ? 1.6 : 1.0;
+      f.phase = 'impact'; f.hold = HOLD_MS[f.part || 'miss'] / 1000;
       const e = f.sim.end; ball.visible = false;
       S.impactAt = new THREE.Vector3(e.x, e.y, e.z);
       const victim = f.hitId && S.byId.get(f.hitId);
       if (victim) {
-        puff(e.x, e.y, e.z, 60, 5); sfx.hit(); victim.hitT = 1.2; victim.avatar.userData.splat.visible = true;
-        toast(f.thrower.name + ' got ' + victim.name + '!', victim.local && S.mode === 'online' ? 'Splat! You hop to a new spot' : '');
+        const pts = HIT_POINTS[f.part] || 1;
+        victim.hitT = 1.2; sfx.hit();
+        if (f.part === 'head') {
+          puff(e.x, e.y, e.z, 90, 6); victim.hatT = 1.6; sfx.crit();
+          toast('HEADSHOT!', f.thrower.name + ' nails ' + victim.name + ' · +' + pts, 1900);
+        } else {
+          puff(e.x, e.y, e.z, 60, 5); victim.avatar.userData.splat.visible = true;
+          toast(f.thrower.name + ' got ' + victim.name + '!', '+' + pts + (victim.local && S.mode === 'online' ? ' · You hop to a new spot' : ''));
+        }
       } else {
         puff(e.x, Math.max(e.y, 0.2), e.z, 30, 3); sfx.thud();
         if (f.thrower.local && !f.thrower.cpu) toast(['Missed!', 'So close!', 'Splat… on the snow', 'Wide!'][Math.floor(Math.random() * 4)], '', 1000);
@@ -613,7 +628,7 @@ function updateFlights(dt) {
       S.flights.shift();
       const victim = f.hitId && S.byId.get(f.hitId);
       if (victim) { victim.avatar.userData.splat.visible = false; relocate(victim); }
-      S.impactAt = null;
+      S.impactAt = null; document.body.classList.remove('killcam');
       S.busy = S.flights.length > 0;
       f.onDone && f.onDone();
     }
@@ -673,7 +688,7 @@ function updateCpu(dt) {
    Lobbies have 4-letter codes. The server decides every throw;
    this page only sends actions and replays what it is told.
    ========================================================= */
-const NET = { ok: false, code: null, token: null, id: null, es: null, view: null, seenN: 0, pendingHits: new Set() };
+const NET = { ok: false, code: null, token: null, id: null, es: null, view: null, seenN: 0, pendingHits: new Map() };
 let lastAimSent = 0;
 
 function sessGet() { try { const s = JSON.parse(sessionStorage.getItem('sb_session') || 'null'); return s && s.code && s.token ? s : null; } catch { return null; } }
@@ -732,7 +747,7 @@ async function joinLobby(code) {
 function connect({ code, token, id }) {
   if (NET.es) NET.es.close();
   Object.assign(NET, { code, token, id, view: null, seenN: 0 });
-  NET.pendingHits = new Set();
+  NET.pendingHits = new Map();
   sessSet({ code, token, id });
   const es = new EventSource('/events?code=' + encodeURIComponent(code) + '&token=' + encodeURIComponent(token));
   NET.es = es;
@@ -792,7 +807,9 @@ function syncFromView(v) {
     if (!p) { p = addPlayer({ id: vp.id, name: safeName(vp.name), color: safeColor(vp.color), local: vp.id === v.you, x: num(vp.x), z: num(vp.z) }); }
     p.name = safeName(vp.name); p.cpu = !!vp.cpu; p.away = !vp.online;
     if (!p.hold) { p.x = num(vp.x, p.x); p.z = num(vp.z, p.z); }
-    p.score = clamp(Math.floor(num(vp.score)), 0, 99) - (NET.pendingHits.has(p.id) || (fresh && th.hit && th.by === p.id) ? 1 : 0);
+    // don't show points before the snowball lands
+    const pending = (NET.pendingHits.get(p.id) || 0) + (fresh && th.hit && th.by === p.id ? (HIT_POINTS[th.part] || 1) : 0);
+    p.score = clamp(Math.floor(num(vp.score)), 0, 99) - pending;
     if (!(p.local && canControl())) { p.yaw = num(vp.yaw, p.yaw); p.pitch = num(vp.pitch, p.pitch); }
     ordered.push(p);
   }
@@ -817,11 +834,12 @@ function showServerThrow(th) {
   const victim = th.hit ? S.byId.get(th.hit) : null;
   if (victim && th.from) { victim.x = num(th.from.x); victim.z = num(th.from.z); victim.hold = true; }
   thrower.x = num(th.x); thrower.z = num(th.z); thrower.yaw = num(th.yaw);
-  if (victim) NET.pendingHits.add(thrower.id);
+  const part = th.part === 'head' ? 'head' : 'body';
+  if (victim) NET.pendingHits.set(thrower.id, (NET.pendingHits.get(thrower.id) || 0) + HIT_POINTS[part]);
   const sim = simulate({ x: num(th.x), z: num(th.z) }, num(th.yaw), clamp(num(th.pitch), PITCH_MIN, PITCH_MAX), clamp(num(th.power), 0, 1),
     windFor(S.seed, Math.floor(num(th.turn))), [], S.map, clamp(Math.floor(num(th.steps, 600)), 1, 1200));
-  startFlight(thrower, sim, victim ? victim.id : null, () => {
-    NET.pendingHits.delete(thrower.id);
+  startFlight(thrower, sim, victim ? victim.id : null, part, () => {
+    if (victim) { const left = (NET.pendingHits.get(thrower.id) || 0) - HIT_POINTS[part]; if (left > 0) NET.pendingHits.set(thrower.id, left); else NET.pendingHits.delete(thrower.id); }
     if (victim) victim.hold = false;
     if (NET.view) syncFromView(NET.view);
   });
@@ -923,7 +941,7 @@ function startLocal() {
   }
   S.cur = Math.floor(Math.random() * S.players.length);
   showGame();
-  $('#turnSub').textContent = 'First to ' + WIN_SCORE + ' hits';
+  $('#turnSub').textContent = 'First to ' + WIN_SCORE + ' points · head 2, body 1';
   onTurnStart();
 }
 
@@ -1124,6 +1142,11 @@ function updateAvatars(dt, time) {
     u.throwArm.rotation.x += (target - u.throwArm.rotation.x) * Math.min(1, dt * (p.armT > 0 ? 25 : 8));
     u.handBall.visible = !(p.armT > 0 && p.armT <= 0.25);
     // hit wobble / idle bob
+    if (p.hatT > 0) {
+      p.hatT -= dt; const k = 1.6 - p.hatT;
+      u.hat.position.set(0, 1.77 + k * 3.2 - k * k * 2.6, -k * 1.4); u.hat.rotation.set(-k * 7, k * 3, 0);
+      if (p.hatT <= 0) { u.hat.position.set(0, 1.77, 0); u.hat.rotation.set(0, 0, 0); }
+    }
     if (p.hitT > 0) { p.hitT -= dt; u.body.rotation.x = -Math.sin(p.hitT * 9) * 0.35 * p.hitT; }
     else { u.body.rotation.x = 0; u.body.position.y = Math.sin(time * 2 + p.x) * 0.02; }
   }
@@ -1157,6 +1180,11 @@ function updateCamera(dt, time) {
   const f = S.flights[0];
   if (S.screen !== 'game' || !p) {
     const a = time * 0.05; want.set(Math.sin(a) * 42, 20, Math.cos(a) * 42); look.set(0, 2, 0); k = 1;
+  } else if (f && f.part === 'head' && (f.t >= f.slowFrom || f.phase === 'impact')) {
+    // critical-hit camera: low side view of the victim's head as the ball arrives
+    const yaw = f.thrower.yaw, e = f.sim.end;
+    want.set(e.x + Math.cos(yaw) * 2.6 - Math.sin(yaw) * 1.2, e.y + 0.35, e.z - Math.sin(yaw) * 2.6 - Math.cos(yaw) * 1.2);
+    look.set(e.x, e.y, e.z); if (ball.visible) look.lerp(ball.position, 0.5); k = 9;
   } else if (f && f.phase === 'fly' && ball.visible) {
     const yaw = f.thrower.yaw;
     want.set(ball.position.x - Math.sin(yaw) * 7, Math.max(2.2, ball.position.y + 2.6), ball.position.z - Math.cos(yaw) * 7);
@@ -1228,5 +1256,5 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // test hook for automated checks
-window.__sb = { S, simulate, startLocal };
+window.__sb = { S, simulate, startLocal, throwNow };
 </script>

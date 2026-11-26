@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import {
   simulate, windFor, makeMap, spawnPoint, planThrow, obstacleHit, mulberry32, throwShowMs,
-  BALL_R, PITCH_MIN, PITCH_MAX, ARENA, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover,
+  BALL_R, PITCH_MIN, PITCH_MAX, ARENA, HIT_POINTS, MOVE_RADIUS, clampMove, standOk, lineBlocked, chooseCover,
 } from '../public/physics.js';
 
 const EMPTY = { walls: [], trees: [], deco: [] };
@@ -84,9 +84,26 @@ test('a perfect computer player hits an open target, and plans stay in range', (
   }
 });
 
-test('show time covers the flight', () => {
-  assert.ok(throwShowMs(240, false) > 2000);
-  assert.ok(throwShowMs(240, true) > throwShowMs(240, false));
+test('show time covers the flight, and head shots get extra for the slow-motion camera', () => {
+  assert.ok(throwShowMs(240, null) > 2000);
+  assert.ok(throwShowMs(240, 'body') > throwShowMs(240, null));
+  assert.ok(throwShowMs(240, 'head') > throwShowMs(240, 'body') + 1500);
+});
+
+test('tells a head hit from a body hit', () => {
+  const target = { id: 'bob', x: 0, z: 6 };
+  const parts = new Set();
+  for (let pitch = 0.05; pitch < 0.6; pitch += 0.01)
+    for (let pw = 0; pw <= 1; pw += 0.02) {
+      const s = simulate({ x: 0, z: 0 }, 0, pitch, pw, CALM, [target], EMPTY);
+      if (s.hit) {
+        parts.add(s.part);
+        const dy = s.end.y;
+        if (s.part === 'head') assert.ok(dy > 1.2, `head hit at y=${dy}`);
+      } else assert.strictEqual(s.part, null);
+    }
+  assert.deepStrictEqual([...parts].sort(), ['body', 'head']);
+  assert.deepStrictEqual(HIT_POINTS, { head: 2, body: 1 });
 });
 
 test('moves are kept inside the 5 m ring', () => {

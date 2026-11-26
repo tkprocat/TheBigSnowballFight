@@ -54,7 +54,7 @@ export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps =
   let vx = Math.sin(yaw) * Math.cos(pitch) * v, vy = Math.sin(pitch) * v, vz = Math.cos(yaw) * Math.cos(pitch) * v;
   const pts = new Float32Array((maxSteps + 1) * 3);
   pts[0] = x; pts[1] = y; pts[2] = z;
-  let n = 1, hit = null, kind = 'out', best = Infinity;
+  let n = 1, hit = null, part = null, kind = 'out', best = Infinity;
   for (let i = 0; i < maxSteps; i++) {
     vx += wind.x * DT; vz += wind.z * DT; vy -= GRAV * DT;
     vx *= 0.9995; vz *= 0.9995; vy *= 0.9995;
@@ -64,14 +64,16 @@ export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps =
     let done = false;
     for (const t of targets) {
       const bx = x - t.x, bz = z - t.z;
-      if (Math.hypot(bx, y - 1.0, bz) < 0.55 + BALL_R || Math.hypot(bx, y - 1.72, bz) < 0.34 + BALL_R || (y < 0.7 && Math.hypot(bx, bz) < 0.3 + BALL_R)) { hit = t.id; kind = 'player'; done = true; break; }
+      // the head is checked first, so a ball clipping both counts as a head hit
+      if (Math.hypot(bx, y - 1.72, bz) < 0.34 + BALL_R) { hit = t.id; part = 'head'; kind = 'player'; done = true; break; }
+      if (Math.hypot(bx, y - 1.0, bz) < 0.55 + BALL_R || (y < 0.7 && Math.hypot(bx, bz) < 0.3 + BALL_R)) { hit = t.id; part = 'body'; kind = 'player'; done = true; break; }
     }
     if (done) break;
     const ob = obstacleHit(x, y, z, map); if (ob) { kind = ob; break; }
     if (y <= BALL_R) { pts[(n - 1) * 3 + 1] = BALL_R; kind = 'ground'; break; }
     if (Math.hypot(x, z) > 80) { kind = 'out'; break; }
   }
-  return { pts, n, hit, kind, end: { x: pts[(n - 1) * 3], y: pts[(n - 1) * 3 + 1], z: pts[(n - 1) * 3 + 2] }, best };
+  return { pts, n, hit, part, kind, end: { x: pts[(n - 1) * 3], y: pts[(n - 1) * 3 + 1], z: pts[(n - 1) * 3 + 2] }, best };
 }
 
 export function windFor(seed, turn) {
@@ -93,14 +95,22 @@ export function spawnPoint(rng, map, others) {
 }
 
 // Game settings shared by the browser and the server.
-export const WIN_SCORE = 5;      // hits needed to win a round
+export const WIN_SCORE = 10;     // points needed to win a round
+export const HIT_POINTS = { head: 2, body: 1 };
 export const TURN_LIMIT = 30;    // seconds per turn before a throw is made for you
 export const MAX_PLAYERS = 8;
 export const COLORS = ['#e2434b', '#2f7de1', '#f2a20c', '#2bb673', '#9b5de5', '#ff6fa3', '#14b8c4', '#8a5a2b'];
 export const BOT_NAMES = ['Frosty', 'Blizzard', 'Sleet', 'Flurry', 'Icicle', 'Slushie', 'Hailey', 'Yeti'];
 
 // How long the client needs to show a throw: wind-up, flight, and the pause after it lands.
-export function throwShowMs(steps, hit) { return 100 + steps * DT * 1000 + (hit ? 1600 : 1000); }
+// Head shots play the end of the flight in slow motion (the critical-hit camera), then hold a little longer.
+export const SLOW_WINDOW = 0.6, SLOW_SPEED = 0.25; // seconds of flight shown slowed, and how slow
+export const HOLD_MS = { head: 2000, body: 1600, miss: 1000 };
+export function throwShowMs(steps, part) {
+  const flight = steps * DT * 1000;
+  const slow = part === 'head' ? Math.min(flight, SLOW_WINDOW * 1000) * (1 / SLOW_SPEED - 1) : 0;
+  return 100 + flight + slow + HOLD_MS[part || 'miss'];
+}
 
 // A computer player's throw: search for the shot that comes closest to a random opponent, then add some error.
 // `rng` returns numbers in [0, 1); `error` scales the miss (0 = perfect).

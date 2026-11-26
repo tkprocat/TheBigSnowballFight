@@ -1,6 +1,6 @@
 # The Big Snowball Fight
 
-A browser-based, turn-based 3D snowball fight. Each turn, first walk up to 5 m (duck behind a wall, a tree or another player to hide from whoever throws next), then pick a direction and an angle, time the power meter and release. The snowball flies on a ballistic arc pushed by the wind, and the goal is to hit your friends' avatars. Hit someone and they hop to a new spot. First to 5 hits wins.
+A browser-based, turn-based 3D snowball fight. Each turn, first walk up to 5 m (duck behind a wall, a tree or another player to hide from whoever throws next), then pick a direction and an angle, time the power meter and release. The snowball flies on a ballistic arc pushed by the wind, and the goal is to hit your friends' avatars. A head hit scores 2 points (with a slow-motion critical-hit camera), a body hit 1. Hit someone and they hop to a new spot. First to 10 points wins.
 
 ## Run it
 
