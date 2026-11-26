@@ -1,5 +1,5 @@
 // Turn-based HUD: scores, the turn banner and timer, wind, the pack button, the move/aim readout and power meter.
-import { TURN_LIMIT, HEAVY_MULT, MOVE_RADIUS } from '../../shared/physics.js';
+import { TURN_LIMIT, HEAVY_MULT, MOVE_RADIUS, angDiff } from '../../shared/physics.js';
 import { S } from '../common/state.js';
 import { $ } from '../common/dom.js';
 import { NET } from '../common/net.js';
@@ -56,6 +56,17 @@ function renderTurnBanner() {
   $('#turnSub').textContent = sub;
 }
 
+// The opponent closest to where you're aiming (within about 20°), and how far away they are.
+function facingOpponent(p, yaw) {
+  let best = null;
+  for (const o of S.players) {
+    if (o === p) continue;
+    const off = Math.abs(angDiff(yaw, Math.atan2(o.x - p.x, o.z - p.z)));
+    if (off < 0.35 && (!best || off < best.off)) best = { p: o, off, d: Math.hypot(o.x - p.x, o.z - p.z) };
+  }
+  return best;
+}
+
 // The readout above the meter, every frame.
 export function updateReadout() {
   const p = curPlayer();
@@ -72,7 +83,8 @@ export function updateReadout() {
     $('#meter').style.visibility = 'hidden';
   } else {
     const showPitch = p ? (p.local ? T.aimPitch : p.pitch) : T.aimPitch;
-    $('#angleTxt').textContent = 'Angle ' + Math.round(showPitch * 180 / Math.PI) + '°';
+    const facing = p && p.local ? facingOpponent(p, T.aimYaw) : null;
+    $('#angleTxt').textContent = 'Angle ' + Math.round(showPitch * 180 / Math.PI) + '°' + (facing ? ' · ' + facing.p.name + ' ' + Math.round(facing.d) + ' m' : '');
     $('#powerTxt').textContent = 'Power ' + Math.round(T.power * 100) + '%' + (last && !T.charging ? ' (last ' + Math.round(last.power * 100) + '%)' : '');
     if ($('#throwBtn').textContent !== 'HOLDTO THROW') $('#throwBtn').innerHTML = 'HOLD<br>TO THROW';
     $('#meter').style.visibility = '';

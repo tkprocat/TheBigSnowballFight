@@ -2,7 +2,7 @@
 // Everyone runs around at once, picks snowballs up off the snow and throws whenever they like.
 // No wind and no heavy snowballs here. The server decides every hit; browsers only draw what it says.
 import {
-  clamp, TAU, GRAV, DT, BALL_R, SPEED_MIN, SPEED_MAX, PITCH_MIN, PITCH_MAX, arenaOf,
+  clamp, TAU, GRAV, DT, BALL_R, speedOf, PITCH_MIN, PITCH_MAX, arenaOf,
   ballHit, obstacleHit, launchPoint, simulate, standOk,
 } from './physics.js';
 
@@ -16,10 +16,15 @@ export const PICKUP_R = 1.0;           // walk this close to a snowball to pick 
 export const PILES_MAX = 64;           // spots on the map that hold snowballs
 export const BALL_RESPAWN_MS = 2000;   // a picked-up snowball comes back somewhere else after this
 export const THROW_COOLDOWN_MS = 450;
-export const THROW_POWER = 0.72;       // every throw goes at the same speed (20 m/s); the angle sets the distance (about 40 m at most)
+export const THROW_POWER = 0.609375;   // every throw goes at the same speed (20 m/s, see speedOf); the angle sets the distance (about 38 m at most)
 export const SHIELD_MS = 1500;         // after being hit you can't be hit again for this long
 export const MAX_FLIGHT_STEPS = 1200;
 export const CALM = Object.freeze({ x: 0, z: 0 });
+// Realtime throws leave the hand a little lower than turn-based ones, and a ball that clips both head and body counts
+// as a body hit, so head shots are a real achievement (about 1 hit in 5; they were two thirds). Pass RT_SIM to simulate()
+// for anything realtime, so browsers replay exactly what the server checked.
+export const RT_LAUNCH_Y = 1.4;      // 1.75 gave ~69% head shots, 1.5 ~47%, 1.4 ~20%, 1.3 ~7% (bot games)
+export const RT_SIM = Object.freeze({ launchY: RT_LAUNCH_Y, bodyFirst: true });
 
 // How many spots with snowballs lie on the map for this many players (more on a bigger map). Each spot is a pile of
 // 1 to 3 (about 1.7 on average), see pileSize().
@@ -27,7 +32,7 @@ export const pilesOnMap = (players, map) => Math.min(PILES_MAX, 10 + Math.round(
 // How many snowballs a new pile holds: 1 (half the time), 2 (30%) or 3 (20%).
 export const pileSize = (rng) => { const r = rng(); return r < 0.2 ? 3 : r < 0.5 ? 2 : 1; };
 
-export const THROW_SPEED = SPEED_MIN + THROW_POWER * (SPEED_MAX - SPEED_MIN);
+export const THROW_SPEED = speedOf(THROW_POWER);
 
 // Can someone step from `from` to `to`? Walls, trees and the arena edge block. Other players only block
 // a step that brings you closer to them, so two people who end up overlapping can still walk apart.
@@ -88,8 +93,8 @@ export function ballSpot(rng, map, players, balls) {
 // A snowball in flight. Same start and same steps as simulate() with no wind, so a browser that replays
 // the throw with simulate() draws exactly the path the server checked.
 export function newBall(n, by, from, yaw, pitch, power) {
-  const v = SPEED_MIN + clamp(power, 0, 1) * (SPEED_MAX - SPEED_MIN);
-  const p = launchPoint(from, yaw);
+  const v = speedOf(power);
+  const p = launchPoint(from, yaw, RT_LAUNCH_Y);
   return {
     n, by, from: { x: from.x, z: from.z }, yaw, pitch, power, steps: 0, acc: 0,
     x: p.x, y: p.y, z: p.z,
@@ -107,7 +112,7 @@ export function stepBall(b, dt, map, targets) {
     b.vx *= 0.9995; b.vz *= 0.9995; b.vy *= 0.9995;
     b.x += b.vx * DT; b.y += b.vy * DT; b.z += b.vz * DT;
     b.steps++;
-    const h = targets.length ? ballHit(b.x, b.y, b.z, targets) : null;
+    const h = targets.length ? ballHit(b.x, b.y, b.z, targets, true) : null;
     if (h) return { kind: 'player', hit: h.id, part: h.part };
     const ob = obstacleHit(b.x, b.y, b.z, map);
     if (ob) return { kind: ob, hit: null, part: null };
@@ -119,13 +124,14 @@ export function stepBall(b, dt, map, targets) {
 
 // A computer player's throw at a (maybe moving) target: solve the flat arc for the fixed throw speed (no drag),
 // lead the target by its velocity (vx, vz), check the shot with simulate(), then add some error. `error` 0 = perfect.
-export function botAim(from, target, map, rng = Math.random, error = 1) {
+// `fineTune`: check the shot against a target that isn't moving with the real physics (hard bots only).
+export function botAim(from, target, map, rng = Math.random, error = 1, fineTune = true) {
   const v = THROW_SPEED;
   const aimAt = (tx, tz) => {
     const yaw = Math.atan2(tx - from.x, tz - from.z);
     const d = Math.max(0.5, Math.hypot(tx - from.x, tz - from.z) - 0.45);
-    // launch height 1.75, aim at chest height 1.1: a*u^2 - d*u + (a - 0.65) = 0 with u = tan(pitch)
-    const a = GRAV * d * d / (2 * v * v), disc = d * d - 4 * a * (a - 0.65);
+    // from the realtime launch height to chest height 1.1: a*u^2 - d*u + (a - h) = 0 with u = tan(pitch)
+    const h = RT_LAUNCH_Y - 1.1, a = GRAV * d * d / (2 * v * v), disc = d * d - 4 * a * (a - h);
     const pitch = disc < 0 ? Math.PI / 4 : Math.atan((d - Math.sqrt(disc)) / (2 * a));
     return { yaw, pitch: clamp(pitch, PITCH_MIN, PITCH_MAX) };
   };
@@ -136,11 +142,11 @@ export function botAim(from, target, map, rng = Math.random, error = 1) {
     plan = aimAt(target.x + vx * t, target.z + vz * t);
   }
   // fine-tune the angle against the real physics (drag, ball and body sizes)
-  if (!vx && !vz) {
+  if (fineTune && !vx && !vz) {
     const tgt = [{ id: 't', x: target.x, z: target.z }];
     for (const dp of [0, -0.01, 0.01, -0.02, 0.02, -0.03, 0.03, -0.05, 0.05]) {
       const p = clamp(plan.pitch + dp, PITCH_MIN, PITCH_MAX);
-      if (simulate(from, plan.yaw, p, THROW_POWER, CALM, tgt, map, 600).hit) { plan.pitch = p; break; }
+      if (simulate(from, plan.yaw, p, THROW_POWER, CALM, tgt, map, 600, null, 1, RT_SIM).hit) { plan.pitch = p; break; }
     }
   }
   const g = () => (rng() + rng() + rng() - 1.5) * error;

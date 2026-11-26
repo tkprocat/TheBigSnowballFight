@@ -20,6 +20,10 @@ export function showLobby(v) {
     b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
     b.disabled = !isHost;
   }
+  // bot difficulty: the host picks, everyone sees it (only shown when there are bots)
+  const level = v.botLevel || 'normal';
+  for (const b of document.querySelectorAll('#botLevelRow button')) { b.setAttribute('aria-pressed', String(b.dataset.level === level)); b.disabled = !isHost; }
+  $('#botLevelRow').hidden = !v.players.some((p) => p.cpu);
   const ul = $('#lobbyList'); ul.textContent = '';
   for (const p of v.players) {
     const li = document.createElement('li');
@@ -53,6 +57,8 @@ export function initLobby(onLeave) {
   for (const b of document.querySelectorAll('.modeBtn'))
     b.onclick = () => api('setMode', { mode: b.dataset.mode }).catch((e) => toast(e.message, '', 1800));
   $('#lobbyBot').onclick = () => api('addBot').catch((e) => toast(e.message, '', 1800));
+  for (const b of document.querySelectorAll('#botLevelRow button'))
+    b.onclick = () => api('setBotLevel', { level: b.dataset.level }).catch((e) => toast(e.message, '', 1800));
   $('#lobbyWatch').onclick = () => api('spectate').catch((e) => toast(e.message, '', 1800));
   $('#lobbyStart').onclick = () => { audio(); api('start').catch((e) => toast(e.message, '', 1800)); };
   $('#lobbyLeave').onclick = onLeave;

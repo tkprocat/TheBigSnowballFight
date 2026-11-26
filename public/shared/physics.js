@@ -9,6 +9,10 @@ export function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 
 export function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
 export const GRAV = 9.8, DT = 1 / 120, BALL_R = 0.15, SPEED_MIN = 7, SPEED_MAX = 25;
+// Throw speed for a power from 0 to 1. Distance grows with speed squared, so power maps to speed squared: every bit of
+// the power meter adds about the same distance (a straight line from power to speed packed the useful range into
+// the top of the meter).
+export const speedOf = (power) => Math.sqrt(SPEED_MIN * SPEED_MIN + Math.max(0, Math.min(1, power)) * (SPEED_MAX * SPEED_MAX - SPEED_MIN * SPEED_MIN));
 export const ARENA = 30;          // the turn-based map's radius
 export const ARENA_LARGE = 60;    // the realtime map's radius (room for 16 players)
 export const arenaOf = (map) => (map && map.size) || ARENA;
@@ -31,7 +35,8 @@ export function makeMap(seed, size = 'small') {
     trees.push({ x, z, s: 0.85 + rng() * 0.4 });
   }
   for (let i = 0; i < 70; i++) { const a = rng() * TAU, r = 36 + rng() * 40; deco.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, s: 0.9 + rng() * 0.9 }); }
-  return { size: ARENA, walls, trees, deco, snowmen: [], forts: [] };
+  // spawnR: players start within 17 m of the middle, so nobody is out of reach (full power carries 36-40 m)
+  return { size: ARENA, spawnR: 17, walls, trees, deco, snowmen: [], forts: [] };
 }
 
 // A fort: four walls with corner towers and gates. Walls get kind 'fort' and towers kind 'tower', so they can be
@@ -126,24 +131,30 @@ export function obstacleHit(x, y, z, map) {
 }
 
 // Does a ball at (x, y, z) hit one of the targets ([{id, x, z}])? Returns {id, part} or null.
-// The head is checked first, so a ball clipping both counts as a head hit.
-export function ballHit(x, y, z, targets) {
+// Turn-based checks the head first, so a ball clipping both counts as a head hit. Realtime passes `bodyFirst`,
+// so there only a clean hit on the head counts as one.
+export function ballHit(x, y, z, targets, bodyFirst = false) {
   for (const t of targets) {
     const bx = x - t.x, bz = z - t.z;
-    if (Math.hypot(bx, y - 1.72, bz) < 0.34 + BALL_R) return { id: t.id, part: 'head' };
-    if (Math.hypot(bx, y - 1.0, bz) < 0.55 + BALL_R || (y < 0.7 && Math.hypot(bx, bz) < 0.3 + BALL_R)) return { id: t.id, part: 'body' };
+    const head = Math.hypot(bx, y - 1.72, bz) < 0.34 + BALL_R;
+    const body = Math.hypot(bx, y - 1.0, bz) < 0.55 + BALL_R || (y < 0.7 && Math.hypot(bx, bz) < 0.3 + BALL_R);
+    if (bodyFirst ? body : head) return { id: t.id, part: bodyFirst ? 'body' : 'head' };
+    if (bodyFirst ? head : body) return { id: t.id, part: bodyFirst ? 'head' : 'body' };
   }
   return null;
 }
 
-export function launchPoint(from, yaw) { return { x: from.x + Math.sin(yaw) * 0.45, y: 1.75, z: from.z + Math.cos(yaw) * 0.45 }; }
+// Where a throw leaves the hand. Turn-based throws from 1.75 m; realtime passes a lower `y` (see realtimeRules.js).
+export function launchPoint(from, yaw, y = 1.75) { return { x: from.x + Math.sin(yaw) * 0.45, y, z: from.z + Math.cos(yaw) * 0.45 }; }
 
 /* simulate: returns sampled path + what it hit. targets = [{id,x,z}] */
 // `heavy` is the packed snowball's multiplier (1 = normal): heavier balls fly a little slower and the wind moves them less.
-export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps = 1200, probe = null, heavy = 1) {
-  const v = (SPEED_MIN + clamp(power, 0, 1) * (SPEED_MAX - SPEED_MIN)) * (heavy > 1 ? HEAVY_SPEED : 1);
+// `opts` (realtime): { launchY, bodyFirst }, see launchPoint() and ballHit().
+export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps = 1200, probe = null, heavy = 1, opts = null) {
+  const v = speedOf(power) * (heavy > 1 ? HEAVY_SPEED : 1);
   const wk = heavy > 1 ? HEAVY_WIND : 1;
-  const p = launchPoint(from, yaw);
+  const p = launchPoint(from, yaw, opts && opts.launchY != null ? opts.launchY : 1.75);
+  const bodyFirst = !!(opts && opts.bodyFirst);
   let x = p.x, y = p.y, z = p.z;
   let vx = Math.sin(yaw) * Math.cos(pitch) * v, vy = Math.sin(pitch) * v, vz = Math.cos(yaw) * Math.cos(pitch) * v;
   const pts = new Float32Array((maxSteps + 1) * 3);
@@ -155,7 +166,7 @@ export function simulate(from, yaw, pitch, power, wind, targets, map, maxSteps =
     x += vx * DT; y += vy * DT; z += vz * DT;
     pts[n * 3] = x; pts[n * 3 + 1] = y; pts[n * 3 + 2] = z; n++;
     if (probe) { const d = Math.hypot(x - probe.x, (y - 1.1) * 0.7, z - probe.z); if (d < best) best = d; }
-    const h = targets.length ? ballHit(x, y, z, targets) : null;
+    const h = targets.length ? ballHit(x, y, z, targets, bodyFirst) : null;
     if (h) { hit = h.id; part = h.part; kind = 'player'; break; }
     const ob = obstacleHit(x, y, z, map); if (ob) { kind = ob; break; }
     if (y <= BALL_R) { pts[(n - 1) * 3 + 1] = BALL_R; kind = 'ground'; break; }
@@ -172,7 +183,7 @@ export function windFor(seed, turn) {
 
 export function spawnPoint(rng, map, others) {
   for (let k = 0; k < 300; k++) {
-    const a = rng() * TAU, r = 5 + rng() * (arenaOf(map) - 7), x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const a = rng() * TAU, r = map.spawnR ? 4 + rng() * (map.spawnR - 4) : 5 + rng() * (arenaOf(map) - 7), x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (map.walls.some(w => Math.hypot(w.x - x, w.z - z) < w.w / 2 + 1.3)) continue;
     if (map.trees.some(t => Math.hypot(t.x - x, t.z - z) < 2.4)) continue;
     if (map.snowmen && map.snowmen.some(m => Math.hypot(m.x - x, m.z - z) < 2)) continue;
@@ -195,6 +206,16 @@ export const CHAT_LINES = ['Nice shot!', 'Missed me!', 'Watch this…', 'Oops!',
 export const EMOTES = ['wave', 'dance', 'cheer'];
 export const TURN_LIMIT = 30;    // seconds per turn before a throw is made for you
 export const MAX_PLAYERS = 16;
+// Computer player difficulty, picked by the host in the lobby.
+//   turnError: aim error in turn-based (planThrow)      packChance: how often a turn-based bot packs instead
+//   rtError: aim error in realtime (botAim)             rtWindup: seconds a realtime bot stands winding up [min, max]
+//   rtRange: how far away a realtime bot will throw     rtFineTune: check the shot with the real physics vs still targets
+export const BOT_LEVELS = {
+  easy: { turnError: 3.2, packChance: 0.1, rtError: 7, rtWindup: [0.9, 1.4], rtRange: 18, rtFineTune: false },
+  normal: { turnError: 2.0, packChance: 0.2, rtError: 4.5, rtWindup: [0.6, 1.0], rtRange: 22, rtFineTune: false },
+  hard: { turnError: 1.0, packChance: 0.25, rtError: 1.8, rtWindup: [0.4, 0.7], rtRange: 26, rtFineTune: true },
+};
+export const botLevel = (name) => BOT_LEVELS[name] || BOT_LEVELS.normal;
 export const COLORS = ['#e2434b', '#2f7de1', '#f2a20c', '#2bb673', '#9b5de5', '#ff6fa3', '#14b8c4', '#8a5a2b',
   '#1e3a8a', '#84cc16', '#0f766e', '#f97316', '#be185d', '#64748b', '#facc15', '#1f2937'];
 export const BOT_NAMES = ['Frosty', 'Blizzard', 'Sleet', 'Flurry', 'Icicle', 'Slushie', 'Hailey', 'Yeti',

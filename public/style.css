@@ -145,3 +145,9 @@ body.watching #controls,body.watching #hint{display:none!important}
 /* spectators pick who to follow from the score list */
 #scoreHud.pick .sc{cursor:pointer}
 .sc.follow{box-shadow:0 0 0 3px #2f7de1,0 3px 10px rgba(20,35,61,.15)}
+
+/* bot difficulty in the lobby */
+.seg{display:inline-flex;border-radius:12px;box-shadow:inset 0 0 0 2px var(--line);overflow:hidden;background:#fff}
+.seg button{border:0;background:none;padding:8px 12px;font-weight:900;font-size:.9rem;color:var(--ink-soft)}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+.seg button:disabled{cursor:default}

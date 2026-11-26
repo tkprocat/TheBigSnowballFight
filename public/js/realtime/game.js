@@ -2,7 +2,7 @@
 // mouse, and throw when you hold a snowball. The server decides every pickup and every hit; snowballs in the air
 // are replayed here from the server's throw (no wind, same physics) and land where the server says they did.
 import { clamp, DT, PITCH_MIN, PITCH_MAX, HIT_POINTS, simulate } from '../../shared/physics.js';
-import { CALM, THROW_POWER, THROW_COOLDOWN_MS, RUN_SPEED, SPRINT_SPEED, moveStep } from '../../shared/realtimeRules.js';
+import { CALM, RT_SIM, THROW_POWER, THROW_COOLDOWN_MS, RUN_SPEED, SPRINT_SPEED, moveStep } from '../../shared/realtimeRules.js';
 import { S } from '../common/state.js';
 import { num, safeName, safeColor, toast } from '../common/dom.js';
 import { api } from '../common/net.js';
@@ -82,7 +82,7 @@ function onEvents(events) {
 
 function startFlight(e) {
   const thrower = S.byId.get(e.by);
-  const sim = simulate({ x: num(e.x), z: num(e.z) }, num(e.yaw), clamp(num(e.pitch), PITCH_MIN, PITCH_MAX), clamp(num(e.power), 0, 1), CALM, [], S.map, 1200);
+  const sim = simulate({ x: num(e.x), z: num(e.z) }, num(e.yaw), clamp(num(e.pitch), PITCH_MIN, PITCH_MAX), clamp(num(e.power), 0, 1), CALM, [], S.map, 1200, null, 1, RT_SIM);
   const mesh = makeBallMesh(1); mesh.visible = false;
   R.flights.set(e.n, { sim, t: 0, mesh, thrower, end: null, wait: 0 });
   if (thrower) { if (!thrower.local) thrower.armT = 0.35; thrower.yaw = num(e.yaw, thrower.yaw); }
@@ -191,7 +191,7 @@ function updateAvatars(dt, time) {
 function updatePreview() {
   const p = me();
   if (!p || !canPlay() || !p.ammo || R.sprinting) { preview.visible = marker.visible = false; return; }
-  const sim = simulate(p, R.yaw, R.pitch, THROW_POWER, CALM, [], S.map, 1200);
+  const sim = simulate(p, R.yaw, R.pitch, THROW_POWER, CALM, [], S.map, 1200, null, 1, RT_SIM);
   showPreview(sim, true);
   marker.visible = true;
   marker.position.set(sim.end.x, Math.max(0, sim.end.y - 0.15), sim.end.z);
