@@ -57,7 +57,9 @@ ul.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radi
 /* ---------- HUD ---------- */
 .hud{position:fixed;pointer-events:none}
 .hud > *{pointer-events:auto}
-#scoreHud{top:calc(var(--sat) + 12px);left:var(--sal);display:flex;flex-direction:column;gap:5px;max-width:42vw}
+#leftHud{top:calc(var(--sat) + 12px);left:var(--sal);display:flex;flex-direction:column;gap:10px;max-width:42vw;pointer-events:none}
+#leftHud > *{pointer-events:auto}
+#scoreHud{display:flex;flex-direction:column;gap:5px}
 .sc{display:flex;align-items:center;gap:8px;background:var(--frost);border-radius:999px;padding:4px 12px 4px 6px;font-weight:900;font-size:.9rem;box-shadow:0 3px 10px rgba(20,35,61,.15);white-space:nowrap;overflow:hidden}
 .sc .nm{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .sc .pts{margin-left:auto;font-family:var(--display);font-size:1.05rem;font-variant-numeric:tabular-nums;padding-left:6px}
@@ -151,3 +153,40 @@ body.watching #controls,body.watching #hint{display:none!important}
 .seg button{border:0;background:none;padding:8px 12px;font-weight:900;font-size:.9rem;color:var(--ink-soft)}
 .seg button[aria-pressed=true]{background:var(--ink);color:#fff}
 .seg button:disabled{cursor:default}
+
+/* the in-game menu (☰) */
+#gameMenu{position:fixed;inset:0;display:grid;place-items:center;background:rgba(20,35,61,.35);padding-left:var(--sal);padding-right:var(--sar);z-index:6}
+#gameMenu .card{max-width:360px;width:100%;text-align:center;align-items:center}
+.menuTitle{font-family:var(--display);font-size:1.4rem;margin:0}
+/* small toasts: chat lines and join/leave notices */
+#toast.small{font-size:clamp(1.05rem,4vw,1.35rem);top:22%}
+.youtag{font-size:.62rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:var(--cherry);border-radius:999px;padding:1px 6px;flex:none}
+.sc .heavytag,.sc .nexttag{flex:none}
+@media (hover:hover) and (pointer:fine){body[data-mode=realtime] #throwBtn{display:none}}
+#turnMain.hurry{color:#ffd0d2}
+#packBtn.armed{background:var(--gold);color:var(--ink);opacity:1;box-shadow:0 0 0 2px var(--ink),0 3px 10px rgba(20,35,61,.18)}
+body.killcam .hud{opacity:.12;transition:opacity .2s}
+.keys.touch{display:none}
+@media (pointer:coarse){.keys.touch{display:block}.keys.desk{display:none}}
+#toast{text-wrap:balance}
+@media (max-width:520px){
+  #readout{flex-direction:column;align-items:center;gap:0;font-size:.78rem;text-align:center}
+  body[data-mode=realtime] #turnHud{top:calc(var(--sat) + 150px);bottom:auto}
+  body[data-mode=realtime] #turnSub{display:none}
+}
+
+/* the hit feed under the scores */
+#killFeed{display:flex;flex-direction:column;gap:4px;pointer-events:none}
+.kf{display:flex;align-items:center;gap:6px;background:rgba(20,35,61,.62);color:#fff;border-radius:999px;padding:3px 10px;font-weight:800;font-size:.8rem;white-space:nowrap;width:max-content;max-width:100%;overflow:hidden;animation:kfIn .25s ease-out;transition:opacity .5s}
+.kf.gone{opacity:0}
+.kf.mine{box-shadow:0 0 0 2px var(--gold)}
+.kf.me{box-shadow:0 0 0 2px var(--cherry)}
+.kf .who{display:inline-flex;align-items:center;gap:4px;overflow:hidden;text-overflow:ellipsis}
+.kf .who.you{font-weight:900;text-decoration:underline;text-underline-offset:2px}
+.kf .who i{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 0 1.5px rgba(255,255,255,.85)}
+.kf .arrow{opacity:.75}
+.kf .kfpts{font-family:var(--display);font-weight:400;font-size:.8rem;color:#cfe8ff}
+.kf .kfpts.head{color:var(--gold)}
+@keyframes kfIn{from{transform:translateX(-12px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.kf{animation:none}}
+@media (max-width:520px){.kf{font-size:.72rem;padding:2px 8px}}

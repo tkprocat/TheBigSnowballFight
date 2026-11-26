@@ -11,6 +11,7 @@ import { THREE, scene, puff, preview, ring, marker, markerMat, easeCamera, fadeB
 import { addPlayer, removePlayer, animateAvatar, updateTags, followed } from '../common/players.js';
 import { THROW_DURATION, THROW_RELEASE_LEFT } from '../common/avatarAnimation.js';
 import { showOver, hideOver } from '../common/over.js';
+import { addFeed, clearFeed } from '../common/feed.js';
 import { R, resetR, me, canPlay } from './state.js';
 import { applySnapshot, interpolate, sendInput } from './net.js';
 import { initInput, runDir, wantSprint, unlock } from './input.js';
@@ -99,6 +100,7 @@ function land(f) {
     if (victim.local) R.splatUntil = performance.now() + 1500;
     if (e.part === 'head') { puff(x, y, z, 80, 6); victim.hatT = 1.6; sfx.crit(); } else puff(x, y, z, 50, 5);
     const by = f.thrower;
+    addFeed(by, victim, e.part === 'head' ? 'head' : 'body', pts); // everyone sees who hit whom
     if (by && by.local) toast(e.part === 'head' ? 'HEADSHOT!' : 'Got ' + victim.name + '!', '+' + pts, 1100);
     else if (victim.local) toast((by ? by.name : 'Someone') + ' got you!', e.part === 'head' ? 'Right on the head' : '+' + pts + ' to them', 1300);
   } else { puff(x, Math.max(y, 0.2), z, 24, 3); sfx.thud(); }
@@ -143,7 +145,7 @@ function syncFromView(v) {
   }
   S.players = ordered;
   if (v.rt) applySnapshot(v.rt, () => {}, syncLoose);
-  if (!v.over && S.over) hideOver();
+  if (!v.over && S.over) { hideOver(); clearFeed(); } // a new round starts with a clean feed
   if (v.over && !S.over) { const w = S.byId.get(v.over.winner); if (w) { unlock(); showOver(w); } }
   renderHUD(true);
 }
@@ -193,12 +195,13 @@ function updateAvatars(dt, time) {
 // Your aim: the arc your throw would take, and a ring where it would come down.
 function updatePreview() {
   const p = me();
-  if (!p || !canPlay() || !p.ammo || R.sprinting) { preview.visible = marker.visible = false; return; }
+  if (!p || !canPlay() || !p.ammo || R.sprinting) { preview.visible = marker.visible = false; R.landsAt = null; return; }
   const sim = simulate(p, R.yaw, R.pitch, THROW_POWER, CALM, [], S.map, 1200, null, 1, RT_SIM);
   showPreview(sim, true);
   marker.visible = true;
   marker.position.set(sim.end.x, Math.max(0, sim.end.y - 0.15), sim.end.z);
   markerMat.color.set(0xffc83a);
+  R.landsAt = Math.hypot(sim.end.x - p.x, sim.end.z - p.z);
 }
 
 const want = new THREE.Vector3(), look = new THREE.Vector3(), ahead = new THREE.Vector3();
@@ -224,7 +227,7 @@ function updateCamera(dt) {
 
 export default {
   enter() {
-    resetR(); clearBalls();
+    resetR(); clearBalls(); clearFeed();
     preview.visible = marker.visible = false;
   },
   onView: syncFromView,
@@ -246,7 +249,7 @@ export default {
     updateReadout();
   },
   exit() {
-    unlock(); clearBalls(); resetR();
+    unlock(); clearBalls(); resetR(); clearFeed();
     preview.visible = marker.visible = ring.visible = false;
   },
 };

@@ -295,10 +295,10 @@ function updateCamera(dt) {
   let k = 3;
   const f = T.flights[0];
   if (f && f.part === 'head' && (f.t >= f.slowFrom || f.phase === 'impact')) {
-    // critical-hit camera: low side view of the victim's head as the ball arrives
-    const yaw = f.thrower.yaw, e = f.sim.end;
-    want.set(e.x + Math.cos(yaw) * 2.6 - Math.sin(yaw) * 1.2, e.y + 0.35, e.z - Math.sin(yaw) * 2.6 - Math.cos(yaw) * 1.2);
-    look.set(e.x, e.y, e.z); if (ball.visible) look.lerp(ball.position, 0.5); k = 9;
+    // critical-hit camera: a side view of the victim, head and shoulders in frame, as the ball arrives
+    const yaw = f.thrower.yaw, e = f.sim.end, v = S.byId.get(f.hitId), vx = v ? v.avatar.position.x : e.x, vz = v ? v.avatar.position.z : e.z;
+    want.set(vx + Math.cos(yaw) * 3.4 - Math.sin(yaw) * 1.4, 1.75, vz - Math.sin(yaw) * 3.4 - Math.cos(yaw) * 1.4);
+    look.set(vx, 1.45, vz); k = 9;
   } else if (f && f.phase === 'fly' && ball.visible) {
     const yaw = f.thrower.yaw;
     want.set(ball.position.x - Math.sin(yaw) * 7, Math.max(2.2, ball.position.y + 2.6), ball.position.z - Math.cos(yaw) * 7);
@@ -319,7 +319,8 @@ function updateCamera(dt) {
   }
   easeCamera(want, look, k, dt);
   fadeBlockingTrees(ball.visible ? ball.position : (T.impactAt || p.avatar.position), dt);
-  // wind arrow relative to camera heading
+  // wind arrow relative to camera heading (held still while the head-shot camera swings round)
+  if (document.body.classList.contains('killcam')) return;
   const w = currentWind();
   camera.getWorldDirection(tmpV);
   const rel = angDiff(Math.atan2(tmpV.x, tmpV.z), w.a);
