@@ -18,7 +18,8 @@ export function unlock() { if (locked()) document.exitPointerLock(); }
 export let lockFailed = false;
 const fine = matchMedia('(hover:hover) and (pointer:fine)');
 export function requestLock() {
-  if (!fine.matches || locked()) return;
+  // only a seated player in a realtime game: spectators (a watching host too) keep their cursor for names and menus
+  if (!fine.matches || locked() || S.watching || S.mode !== 'realtime' || !S.players.some((p) => p.local)) return;
   try { window.focus(); canvas.focus({ preventScroll: true }); } catch {}
   const fail = () => { lockFailed = true; };
   try { const r = canvas.requestPointerLock(); if (r && typeof r.catch === 'function') r.catch(fail); } catch { fail(); }
