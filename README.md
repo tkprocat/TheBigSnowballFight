@@ -51,6 +51,8 @@ Lobbies live in memory, so a restart ends games in progress.
 | Pack a heavy snowball (uses your turn) | H | Pack ×3 button |
 | Quick chat | C | 💬 |
 
+Your direction and angle stay where you left them after each throw, and a dark mark on the power meter shows your last power, so you can adjust from your previous shot.
+
 ## How it works
 
 - `public/physics.js` holds the game rules and physics (fixed 1/120 s steps, gravity, wind, trees, snow walls, spawn points, the computer player's aim). It is shared by the browser and the server.
