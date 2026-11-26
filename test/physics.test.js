@@ -216,8 +216,9 @@ test('the realtime map is big, has forts with walk-through gates, and is the sam
   const m = makeMap(4242, 'large');
   assert.strictEqual(m.size, ARENA_LARGE);
   assert.deepStrictEqual(makeMap(4242, 'large'), m, 'same seed, same map');
-  assert.strictEqual(m.forts.length, 4);
-  assert.strictEqual(m.walls.filter((w) => w.kind === 'tower').length, 16);
+  assert.strictEqual(m.forts.length, 4, 'the castle and three outposts');
+  assert.strictEqual(new Set(m.forts.slice(1).map((f) => f.kind)).size, 3, 'three different outpost shapes');
+  assert.ok(m.walls.filter((w) => w.kind === 'tower').length >= 4, 'the castle has corner towers');
   assert.ok(m.walls.filter((w) => !w.kind).length >= 30, 'plenty of loose walls');
   assert.ok(m.trees.length >= 35 && m.snowmen.length >= 10);
   // you can walk into the central fort through a gate: the gate's middle is standable, the wall beside it is not
@@ -320,4 +321,29 @@ test('bot levels: easy misses more than normal, normal more than hard (turn-base
   const easy = rate(BOT_LEVELS.easy), normal = rate(BOT_LEVELS.normal), hard = rate(BOT_LEVELS.hard);
   assert.ok(easy < normal && normal < hard, `hits: easy ${easy}, normal ${normal}, hard ${hard} of 150`);
   assert.strictEqual(botLevel('nonsense'), BOT_LEVELS.normal);
+});
+
+test('walls come in three heights; only tall ones hide you completely, and the castle keep is reached by walking round', async () => {
+  const { WALL_LOW, WALL_TALL } = await import('../public/shared/physics.js');
+  const m = makeMap(9001, 'large');
+  const loose = m.walls.filter((w) => !w.kind);
+  assert.ok(loose.some((w) => w.h === WALL_LOW) && loose.some((w) => w.h === WALL_TALL) && loose.some((w) => w.h > WALL_LOW && w.h < WALL_TALL), 'low, medium and tall loose walls');
+  assert.ok(m.walls.filter((w) => w.h >= WALL_TALL).length >= 10, 'plenty of full cover');
+  // a tall wall blocks a throw at head height; a low one doesn't block the line of sight at chest height
+  const tall = { ...EMPTY, walls: [{ x: 0, z: 3, w: 4, h: WALL_TALL, d: 0.8, ry: 0 }] };
+  const low = { ...EMPTY, walls: [{ x: 0, z: 3, w: 4, h: WALL_LOW, d: 0.7, ry: 0 }] };
+  assert.strictEqual(obstacleHit(0, 2.0, 3, tall), 'wall', 'a head behind a tall wall is covered');
+  assert.ok(lineBlocked({ x: 0, z: 0 }, { x: 0, z: 6 }, tall, []));
+  assert.ok(!lineBlocked({ x: 0, z: 0 }, { x: 0, z: 6 }, low, []), 'you can see over a low wall');
+  // the keep: you can stand in the middle; its walls are tall; the straight way in from an outer gate is blocked
+  const f = m.forts[0], c = Math.cos(f.rot), s = Math.sin(f.rot), at = (lx, lz) => ({ x: lx * c - lz * s, z: lx * s + lz * c });
+  assert.strictEqual(f.kind, 'castle');
+  assert.ok(standOk(0, 0, m, []), 'room inside the keep');
+  assert.ok(m.walls.some((w) => w.kind === 'keep' && w.h === WALL_TALL));
+  const outerGate = at(0, f.half), keepWall = at(0, f.keep);
+  assert.ok(standOk(outerGate.x, outerGate.z, m, []), 'the outer gate is open');
+  assert.ok(!standOk(keepWall.x, keepWall.z, m, []), 'the keep has no gate facing the outer gate');
+  const nav = await import('../modes/realtime/nav.js');
+  const route = nav.findPath(nav.buildNav(m), outerGate, { x: 0, z: 0 });
+  assert.ok(route && route.dist > f.half + 3, 'you walk round to the keep\'s gate');
 });

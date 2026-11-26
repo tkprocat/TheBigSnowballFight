@@ -67,6 +67,7 @@ function makeGround(flat) {
 const MAT = {
   snow: new THREE.MeshStandardMaterial({ color: 0xf6fafd, roughness: 0.85 }),
   block: new THREE.MeshStandardMaterial({ color: 0xe3eef7, roughness: 0.8 }),
+  blockTall: new THREE.MeshStandardMaterial({ color: 0xc4d4e3, roughness: 0.82 }), // tall walls (full cover) read darker
   trunk: new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 0.9 }),
   pine: new THREE.MeshStandardMaterial({ color: 0x1f5b4a, roughness: 0.85 }),
   pine2: new THREE.MeshStandardMaterial({ color: 0x2a6e58, roughness: 0.85 }),
@@ -115,6 +116,7 @@ function makeSnowman(s) {
 
 let mapGroup = null;
 let fadeTrees = []; // the trees in the arena: { g, x, z, r, top, alpha }
+let fadeWalls = []; // tall walls and towers: { g, w, alpha }
 // `piles`: the decorative snowballs behind each wall (left out in realtime, where real ones lie on the snow).
 function buildMapMeshes(map, piles = true) {
   if (mapGroup) { scene.remove(mapGroup); mapGroup.traverse(o => { if (o.isMesh && o.geometry) o.geometry.dispose(); }); }
@@ -124,9 +126,12 @@ function buildMapMeshes(map, piles = true) {
   scene.fog.near = size + 10; scene.fog.far = size * 2 + 60;
   const ballGeo = new THREE.SphereGeometry(0.22, 10, 8);
   const crenelGeo = new THREE.BoxGeometry(0.42, 0.34, 0.5);
+  fadeWalls = [];
   for (const w of map.walls) {
     const g = new THREE.Group();
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w.w, w.h, w.d), MAT.block);
+    // tall walls (and towers) get their own materials, so they can fade when they hide the player from the camera
+    const tall = w.h >= 2, blockMat = tall ? (w.kind === 'tower' ? MAT.block : MAT.blockTall).clone() : MAT.block;
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w.w, w.h, w.d), blockMat);
     b.position.y = w.h / 2; b.castShadow = b.receiveShadow = true; g.add(b);
     if (w.kind === 'tower') {
       // a tower: snowy top with battlements on each corner, and a flag
@@ -148,9 +153,16 @@ function buildMapMeshes(map, piles = true) {
     // the physics turns a wall by ry the other way round from three.js, so the mesh turns by -ry
     g.position.set(w.x, 0, w.z); g.rotation.y = -w.ry;
     mapGroup.add(g);
+    if (tall) {
+      // every material in this wall's group gets its own copy, so only this wall fades
+      const mats = [];
+      g.traverse((o) => { if (o.isMesh) { if (o.material !== blockMat) o.material = o.material.clone(); mats.push(o.material); } });
+      g.userData.mats = mats;
+      fadeWalls.push({ g, w, alpha: 1 });
+    }
   }
   for (const m of map.snowmen || []) { const sm = makeSnowman(m.s); sm.position.set(m.x, 0, m.z); sm.rotation.y = m.ry || 0; mapGroup.add(sm); }
-  for (const t of fadeTrees) for (const m of t.g.userData.mats) m.dispose();
+  for (const t of [...fadeTrees, ...fadeWalls]) for (const m of t.g.userData.mats) m.dispose();
   fadeTrees = [];
   for (const t of map.trees) {
     const tr = makeTree(t.s, true); tr.position.set(t.x, 0, t.z); mapGroup.add(tr);
@@ -291,13 +303,27 @@ export function fadeBlockingTrees(target, dt) {
     const k = Math.max(0, Math.min(1, ((t.x - c.x) * dx + (t.z - c.z) * dz) / len2));
     const d = Math.hypot(c.x + dx * k - t.x, c.z + dz * k - t.z);
     const blocks = d < t.r && k < 1 && c.y < t.top + 1;
-    const want = blocks ? 0.1 : 1;
-    if (Math.abs(t.alpha - want) < 0.005) continue;
-    t.alpha += (want - t.alpha) * Math.min(1, dt * 8);
-    if (Math.abs(t.alpha - want) < 0.01) t.alpha = want;
-    const see = t.alpha < 0.999;
-    for (const m of t.g.userData.mats) { m.transparent = see; m.opacity = t.alpha; m.depthWrite = !see; m.needsUpdate = true; }
+    fadeTo(t, blocks ? 0.1 : 1, dt);
   }
+  // tall walls: does the camera's line of sight pass through the wall's box (a little wider), below its top?
+  for (const f of fadeWalls) {
+    const w = f.w, cs = Math.cos(-w.ry), sn = Math.sin(-w.ry), hw = w.w / 2 + 0.3, hd = w.d / 2 + 0.3;
+    let blocks = false;
+    for (let k = 1; k < 24 && !blocks; k++) {
+      const t = k / 24, x = c.x + dx * t - w.x, z = c.z + dz * t - w.z, y = c.y + (1.2 - c.y) * t;
+      blocks = Math.abs(x * cs - z * sn) < hw && Math.abs(x * sn + z * cs) < hd && y < w.h + 0.3;
+    }
+    fadeTo(f, blocks ? 0.18 : 1, dt);
+  }
+}
+
+// Ease something with its own materials towards an opacity.
+function fadeTo(t, want, dt) {
+  if (Math.abs(t.alpha - want) < 0.005) return;
+  t.alpha += (want - t.alpha) * Math.min(1, dt * 8);
+  if (Math.abs(t.alpha - want) < 0.01) t.alpha = want;
+  const see = t.alpha < 0.999;
+  for (const m of t.g.userData.mats) { m.transparent = see; m.opacity = t.alpha; m.depthWrite = !see; m.needsUpdate = true; }
 }
 
 // Camera easing toward a wanted position and look-at point.
