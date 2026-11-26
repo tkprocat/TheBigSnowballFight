@@ -284,3 +284,23 @@ test('path search: settles every square once and finds far snowballs; shortcuts 
   let at = { x: 1.05, z: -3 };
   for (const p of round.pts) { assert.ok(pathClear(at, p, treeMap), 'the route goes round the tree'); at = p; }
 });
+
+test('bots never run more route searches in a tick than the planning budget allows', async () => {
+  const { PLANS_PER_TICK } = await import('../modes/realtime/bots.js');
+  const host = actions.create({ name: 'W' });
+  act('spectate', host.code, host.token);
+  act('addBot', host.code, host.token, { count: 15 });
+  act('setMode', host.code, host.token, { mode: 'realtime' });
+  act('start', host.code, host.token);
+  const room = rooms.get(host.code);
+  room.rt.goAt = 0;
+  let most = 0;
+  for (let i = 0; i < 30 * 30 && !room.over; i++) {
+    const before = nav.stats.searches;
+    T += TICK_MS; tick(room, T);
+    most = Math.max(most, nav.stats.searches - before);
+  }
+  assert.ok(most <= PLANS_PER_TICK, `at most ${most} searches in one tick (budget ${PLANS_PER_TICK})`);
+  assert.ok(most > 0, 'bots did plan');
+  stopTick(room);
+});

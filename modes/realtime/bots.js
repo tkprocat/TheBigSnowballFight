@@ -50,20 +50,24 @@ export function botStep(room, bot, dt, now, game) {
   const planOk = (pl) => pl && (pl.kind !== 'ball' || room.rt.balls.some((b) => b.id === pl.id));
   if (ai.detour > 0) ai.detour -= dt;
   else {
-    const canPlan = room.rt.plansLeft == null || room.rt.plansLeft > 0;
+    // Plan only without a route, or when the route is older than REPLAN_MS (a better snowball may be in reach by
+    // now). Every search costs one from this tick's budget; with none left, keep following the old route.
     if (!planOk(ai.plan)) ai.plan = null;
-    else if (canPlan && now - ai.plan.at > REPLAN_MS) ai.plan = null;
-    if (canPlan && !ai.plan && room.rt.plansLeft != null) room.rt.plansLeft--;
-    if (canPlan && bot.ammo < CARRY_MAX && (!ai.plan || ai.plan.kind !== 'ball')) {
-      const r = nearestBallPath(nav, bot, room.rt.balls);
-      if (r && (bot.ammo === 0 || r.dist < 10)) ai.plan = { kind: 'ball', id: r.ball.id, pts: r.pts, dist: r.dist, at: now };
-    }
-    if (canPlan && !ai.plan) {
-      const foe = nearest(bot, others);
-      const cx = foe ? foe.o.x : 0, cz = foe ? foe.o.z : 0, a = rng() * TAU, r = 8 + rng() * 6;
-      const spot = walkableSpot(nav, cx + Math.cos(a) * r, cz + Math.sin(a) * r);
-      const route = spot && findPath(nav, bot, spot);
-      ai.plan = route ? { kind: 'roam', pts: route.pts, dist: route.dist, at: now } : null;
+    if (!ai.plan || now - ai.plan.at > REPLAN_MS) {
+      const spend = () => { const rt = room.rt; if (rt.plansLeft == null) return true; if (rt.plansLeft <= 0) return false; rt.plansLeft--; return true; };
+      let next = null;
+      if (bot.ammo < CARRY_MAX && spend()) {
+        const r = nearestBallPath(nav, bot, room.rt.balls);
+        if (r && (bot.ammo === 0 || r.dist < 10)) next = { kind: 'ball', id: r.ball.id, pts: r.pts, dist: r.dist, at: now };
+      }
+      if (!next && spend()) {
+        const foe = nearest(bot, others);
+        const cx = foe ? foe.o.x : 0, cz = foe ? foe.o.z : 0, a = rng() * TAU, r = 8 + rng() * 6;
+        const spot = walkableSpot(nav, cx + Math.cos(a) * r, cz + Math.sin(a) * r);
+        const route = spot && findPath(nav, bot, spot);
+        if (route) next = { kind: 'roam', pts: route.pts, dist: route.dist, at: now };
+      }
+      if (next) ai.plan = next;
     }
   }
   // the next point on the route (a detour overrides it for a moment)

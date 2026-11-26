@@ -5,6 +5,8 @@
 import { arenaOf, standOk } from '../../public/shared/physics.js';
 
 const CELL = 1;
+// How many route searches have run (tests check the per-tick budget against this).
+export const stats = { searches: 0 };
 const DIAG = Math.SQRT2;
 
 // The walkability grid for a map: the same rules as standOk() (arena edge, walls, trees, snowmen; players don't
@@ -187,6 +189,7 @@ function toPoints(nav, prev, end, start, last) {
 
 // A walking route from `from` to `to`: { pts, dist }, or null if there isn't one.
 export function findPath(nav, from, to) {
+  stats.searches++;
   const a = walkableNear(nav, from.x, from.z), b = walkableNear(nav, to.x, to.z);
   if (a < 0 || b < 0) return null;
   if (segmentClear(nav, from, to)) return { pts: [{ x: to.x, z: to.z }], dist: Math.hypot(to.x - from.x, to.z - from.z) };
@@ -196,6 +199,7 @@ export function findPath(nav, from, to) {
 
 // The snowball pile nearest on foot, and the route to it: { ball, pts, dist }, or null.
 export function nearestBallPath(nav, from, balls) {
+  stats.searches++;
   const a = walkableNear(nav, from.x, from.z);
   if (a < 0 || !balls.length) return null;
   const goals = new Map();
