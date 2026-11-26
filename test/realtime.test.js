@@ -84,6 +84,21 @@ test('pick up snowballs you walk over, up to 3', () => {
   stopTick(room);
 });
 
+test('a pile gives you as many as you can carry and leaves the rest', () => {
+  const { room, a, b } = game();
+  a.ammo = 2; b.x = 20; b.z = 20;
+  room.rt.balls.push({ id: 500, x: a.x + 0.3, z: a.z, n: 3 });
+  run(room, TICK_MS);
+  assert.strictEqual(a.ammo, 3, 'took one, hands full');
+  assert.strictEqual(room.rt.balls.find((p) => p.id === 500).n, 2, 'two left in the pile');
+  a.ammo = 0;
+  run(room, TICK_MS);
+  assert.strictEqual(a.ammo, 2, 'took the other two');
+  assert.ok(!room.rt.balls.some((p) => p.id === 500), 'the empty pile is gone');
+  assert.strictEqual(room.rt.respawns.length, 1, 'and comes back somewhere else');
+  stopTick(room);
+});
+
 test('throwing needs a snowball, always goes at the same speed, and respects the cooldown', () => {
   const { room, code, tok, a } = game();
   a.ammo = 0;

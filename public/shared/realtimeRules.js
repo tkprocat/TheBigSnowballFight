@@ -13,16 +13,19 @@ export const SEND_MS = 1000 / 15;      // how often the server sends positions
 export const INPUT_MS = 50;            // how often a browser reports its position
 export const CARRY_MAX = 3;            // snowballs you can hold
 export const PICKUP_R = 1.0;           // walk this close to a snowball to pick it up
-export const BALLS_MAX = 36;
-export const BALL_RESPAWN_MS = 3000;   // a picked-up snowball comes back somewhere else after this
+export const PILES_MAX = 64;           // spots on the map that hold snowballs
+export const BALL_RESPAWN_MS = 2000;   // a picked-up snowball comes back somewhere else after this
 export const THROW_COOLDOWN_MS = 450;
-export const THROW_POWER = 0.6;        // every throw goes at the same speed; the angle sets the distance (about 30 m at most)
+export const THROW_POWER = 0.72;       // every throw goes at the same speed (20 m/s); the angle sets the distance (about 40 m at most)
 export const SHIELD_MS = 1500;         // after being hit you can't be hit again for this long
 export const MAX_FLIGHT_STEPS = 1200;
 export const CALM = Object.freeze({ x: 0, z: 0 });
 
-// How many loose snowballs lie on the map for this many players (more on a bigger map).
-export const ballsOnMap = (players, map) => Math.min(BALLS_MAX, 3 + Math.round(players * 1.5) + Math.floor((arenaOf(map) - 30) / 3));
+// How many spots with snowballs lie on the map for this many players (more on a bigger map). Each spot is a pile of
+// 1 to 3 (about 1.7 on average), see pileSize().
+export const pilesOnMap = (players, map) => Math.min(PILES_MAX, 10 + Math.round(players * 3.5) + Math.floor((arenaOf(map) - 30) * 0.6));
+// How many snowballs a new pile holds: 1 (half the time), 2 (30%) or 3 (20%).
+export const pileSize = (rng) => { const r = rng(); return r < 0.2 ? 3 : r < 0.5 ? 2 : 1; };
 
 export const THROW_SPEED = SPEED_MIN + THROW_POWER * (SPEED_MAX - SPEED_MIN);
 

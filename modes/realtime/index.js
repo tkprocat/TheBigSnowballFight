@@ -5,7 +5,7 @@
 import { TAU, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, clamp } from '../../public/shared/physics.js';
 import {
   RUN_SPEED, SPRINT_SPEED, TICK_MS, SEND_MS, CARRY_MAX, PICKUP_R, BALL_RESPAWN_MS, THROW_COOLDOWN_MS, THROW_POWER, SHIELD_MS,
-  ballsOnMap, pathClear, ballSpot, newBall, stepBall,
+  pilesOnMap, pileSize, pathClear, ballSpot, newBall, stepBall,
 } from '../../public/shared/realtimeRules.js';
 import { rand, place, broadcast, broadcastEvent, broadcastSay, humanWatching } from '../../rooms.js';
 import { botStep } from './bots.js';
@@ -27,7 +27,7 @@ function resetPlayer(p, now) {
 
 function addBall(room) {
   const rt = room.rt, at = ballSpot(rand, room.map, room.players, rt.balls);
-  rt.balls.push({ id: ++rt.ballN, x: round2(at.x), z: round2(at.z) });
+  rt.balls.push({ id: ++rt.ballN, x: round2(at.x), z: round2(at.z), n: pileSize(rand) });
 }
 
 function startRound(room) {
@@ -35,7 +35,7 @@ function startRound(room) {
   stopTick(room);
   freshState(room);
   for (const p of room.players) resetPlayer(p, now);
-  for (let i = ballsOnMap(room.players.length, room.map); i > 0; i--) addBall(room);
+  for (let i = pilesOnMap(room.players.length, room.map); i > 0; i--) addBall(room);
   ensureTick(room);
 }
 
@@ -67,20 +67,21 @@ export function tick(room, now) {
 
   for (const p of room.players) if (p.cpu) botStep(room, p, dt, now, game);
 
-  // pick up snowballs you walk over
+  // pick up snowballs you walk over: as many from the pile as you can carry; the rest stay for someone else
   for (const p of room.players) {
     if (p.ammo >= CARRY_MAX) continue;
     const i = rt.balls.findIndex((b) => Math.hypot(b.x - p.x, b.z - p.z) < PICKUP_R);
     if (i < 0) continue;
-    rt.balls.splice(i, 1);
-    p.ammo += 1;
-    rt.respawns.push(now + BALL_RESPAWN_MS);
-    rt.events.push({ t: 'pick', by: p.id });
+    const pile = rt.balls[i], take = Math.min(pile.n || 1, CARRY_MAX - p.ammo);
+    p.ammo += take;
+    pile.n = (pile.n || 1) - take;
+    if (pile.n <= 0) { rt.balls.splice(i, 1); rt.respawns.push(now + BALL_RESPAWN_MS); }
+    rt.events.push({ t: 'pick', by: p.id, n: take });
   }
   // and they come back somewhere else
   while (rt.respawns.length && rt.respawns[0] <= now) {
     rt.respawns.shift();
-    if (rt.balls.length < ballsOnMap(room.players.length, room.map)) addBall(room);
+    if (rt.balls.length < pilesOnMap(room.players.length, room.map)) addBall(room);
   }
 
   // snowballs in flight, checked against where everyone stands now
@@ -122,7 +123,7 @@ export function snapshot(room, now = clock.now()) {
     t: now,
     p: room.players.map((p) => [p.id, round2(p.x), round2(p.z), round3(p.yaw), round3(p.pitch), p.ammo, p.score, p.fix,
       now < p.shieldUntil ? 1 : 0, p.chargeAt ? 1 : 0]),
-    b: rt.balls.map((b) => [b.id, b.x, b.z]),
+    b: rt.balls.map((b) => [b.id, b.x, b.z, b.n || 1]),
     e: rt.events,
   };
 }
@@ -176,7 +177,7 @@ export default {
   join(room, p) {
     place(room, p);
     resetPlayer(p, clock.now());
-    if (room.rt && room.rt.balls.length < ballsOnMap(room.players.length, room.map)) addBall(room);
+    if (room.rt && room.rt.balls.length < pilesOnMap(room.players.length, room.map)) addBall(room);
   },
 
   remove(room) {
