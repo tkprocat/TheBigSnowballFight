@@ -213,3 +213,55 @@ test('sprinting allows a faster step, but no throwing until you stop', () => {
   assert.strictEqual(a.sprinting, false);
   stopTick(room);
 });
+
+// ---------- bot path finding (modes/realtime/nav.js) ----------
+const nav = await import('../modes/realtime/nav.js');
+const { makeMap, standOk: canStand } = await import('../public/shared/physics.js');
+
+test('the walk grid matches standOk exactly, and paths go round walls and through fort gates', () => {
+  const big = makeMap(4242, 'large'), grid = nav.buildNav(big);
+  for (let i = 0; i < grid.walk.length; i += 7) {
+    const x = grid.o + (i % grid.n) + 0.5, z = grid.o + Math.floor(i / grid.n) + 0.5;
+    assert.strictEqual(!!grid.walk[i], canStand(x, z, big, []), `square ${i}`);
+  }
+  // from outside the central fort to its middle: the route must go through a gate, so it's longer than straight
+  const f = big.forts[0], c = Math.cos(f.rot), s = Math.sin(f.rot);
+  const outside = { x: (f.half + 3) * c - (f.half - 1.5) * s, z: (f.half + 3) * s + (f.half - 1.5) * c }; // beside a wall, next to a corner
+  const route = nav.findPath(grid, outside, { x: 0, z: 0 });
+  assert.ok(route, 'there is a way in');
+  assert.ok(route.dist > Math.hypot(outside.x, outside.z) + 1, 'not straight through the wall');
+  let at = outside;
+  for (const p of route.pts) { assert.ok(nav.gridClear(grid, at, p), 'every leg is walkable'); at = p; }
+});
+
+test('bots choose the snowball nearest on foot, not the one behind a wall', () => {
+  const map = { walls: [{ x: 0, z: 2, w: 30, h: 1.5, d: 0.7, ry: 0 }], trees: [], deco: [], size: 30 };
+  const grid = nav.buildNav(map);
+  const near = { id: 1, x: 0, z: 4 };   // 4 m away, but behind a 30 m wall
+  const far = { id: 2, x: 9, z: -2 };   // 9 m away, on our side
+  const r = nav.nearestBallPath(grid, { x: 0, z: 0 }, [near, far]);
+  assert.strictEqual(r.ball.id, 2);
+});
+
+test('bots in a fort map keep moving: little time stuck, and a game still finishes', () => {
+  const host = actions.create({ name: 'W' });
+  act('spectate', host.code, host.token);
+  act('addBot', host.code, host.token, { count: 6 });
+  act('setMode', host.code, host.token, { mode: 'realtime' });
+  act('start', host.code, host.token);
+  const room = rooms.get(host.code);
+  const last = new Map();
+  let windows = 0, stuckN = 0;
+  for (let i = 0; i < 30 * 120 && !room.over; i++) {
+    T += TICK_MS; tick(room, T);
+    if (i % 90) continue;
+    for (const b of room.players) {
+      const p = last.get(b.id); last.set(b.id, { x: b.x, z: b.z, aim: b.ai && b.ai.state === 'aim' });
+      if (!p || p.aim || (b.ai && b.ai.state === 'aim') || T < b.shieldUntil) continue;
+      windows++; if (Math.hypot(b.x - p.x, b.z - p.z) < 3) stuckN++;
+    }
+  }
+  assert.ok(room.over, 'someone won within 2 minutes');
+  assert.ok(stuckN / Math.max(1, windows) < 0.2, `stuck ${stuckN} of ${windows} walking windows`);
+  stopTick(room);
+});
