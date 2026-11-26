@@ -1,0 +1,77 @@
+// Turn-based HUD: scores, the turn banner and timer, wind, the pack button, the move/aim readout and power meter.
+import { TURN_LIMIT, HEAVY_MULT, MOVE_RADIUS } from '../../shared/physics.js';
+import { S } from '../common/state.js';
+import { $ } from '../common/dom.js';
+import { NET } from '../common/net.js';
+import { renderScores } from '../common/players.js';
+import { T, curPlayer, nextPlayer, currentWind, canControl, canMove, hiddenFromNext } from './state.js';
+
+export function renderHUD() {
+  if (S.screen !== 'game' || S.mode !== 'turn') return;
+  const cur = curPlayer(), next = nextPlayer();
+  renderScores({
+    cur,
+    tags: (p) => [
+      ...(p.heavy > 1 ? [['heavytag', '×' + p.heavy]] : []),
+      ...(p === next && p !== cur ? [['nexttag', 'next']] : []),
+    ],
+  });
+  renderTurnBanner();
+  const w = currentWind();
+  $('#windVal').textContent = w.s < 0.05 ? 'Calm' : Math.round(w.s * 6) + ' km/h';
+  refreshControls();
+}
+
+// The bits that change by themselves over time (called a few times a second).
+export function refreshControls() {
+  const mine = canControl();
+  $('#controls').style.opacity = mine ? 1 : 0.45;
+  $('#throwBtn').disabled = !mine;
+  updatePackBtn();
+  $('#hint').hidden = !mine;
+  $('#hint').textContent = canMove() ? 'Arrows or tap the snow to pick a spot · Space to move there · Tab to stay' : '← → aim · ↑ ↓ angle · Tab next target · hold Space to throw · H to pack a heavy snowball';
+  renderTurnBanner();
+}
+
+function updatePackBtn() {
+  const p = curPlayer(), lvl = p ? (p.heavy || 1) : 1;
+  $('#packBtn').textContent = lvl > 1 ? 'Packed ×' + lvl : 'Pack ×' + HEAVY_MULT;
+  $('#packBtn').disabled = !canControl() || T.charging || lvl > 1;
+}
+
+function renderTurnBanner() {
+  const p = curPlayer(); if (!p) { $('#turnMain').textContent = ''; return; }
+  let main;
+  if (S.over) main = 'Round over';
+  else if (T.busy) main = 'Incoming!';
+  else if (p.local) main = 'Your turn' + (T.phase === 'move' ? ': move' : ': throw');
+  else main = p.name + (T.phase === 'move' ? ' is moving…' : ' is aiming…');
+  $('#turnMain').textContent = main;
+  const left = Math.max(0, Math.ceil((T.turnDeadline - Date.now()) / 1000));
+  let sub = 'Lobby ' + NET.code + (S.watching ? ' · watching (Tab: next player)' : '');
+  if (!T.busy && !S.over && T.turnDeadline && left <= TURN_LIMIT) sub += ' · ' + left + 's';
+  $('#turnSub').textContent = sub;
+}
+
+// The readout above the meter, every frame.
+export function updateReadout() {
+  const p = curPlayer();
+  $('#meterFill').style.width = (T.power * 100).toFixed(1) + '%';
+  const last = p && p.local ? p.lastAim : null;
+  $('#meterLast').hidden = !last;
+  if (last) $('#meterLast').style.left = (last.power * 100).toFixed(1) + '%';
+  if (canMove()) {
+    const d = Math.hypot(T.moveTo.x - p.x, T.moveTo.z - p.z);
+    $('#angleTxt').textContent = 'Walk ' + d.toFixed(1) + ' of ' + MOVE_RADIUS + ' m';
+    const hid = hiddenFromNext(T.moveTo), n = nextPlayer();
+    $('#powerTxt').textContent = hid == null ? '' : (hid ? 'Hidden from ' + n.name : n.name + ' can see you');
+    $('#throwBtn').innerHTML = d < 0.05 ? 'STAY<br>HERE' : 'MOVE<br>HERE';
+    $('#meter').style.visibility = 'hidden';
+  } else {
+    const showPitch = p ? (p.local ? T.aimPitch : p.pitch) : T.aimPitch;
+    $('#angleTxt').textContent = 'Angle ' + Math.round(showPitch * 180 / Math.PI) + '°';
+    $('#powerTxt').textContent = 'Power ' + Math.round(T.power * 100) + '%' + (last && !T.charging ? ' (last ' + Math.round(last.power * 100) + '%)' : '');
+    if ($('#throwBtn').textContent !== 'HOLDTO THROW') $('#throwBtn').innerHTML = 'HOLD<br>TO THROW';
+    $('#meter').style.visibility = '';
+  }
+}
