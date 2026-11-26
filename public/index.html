@@ -1331,7 +1331,8 @@ function updateCamera(dt, time) {
       want.set(ax - Math.sin(yaw) * 9, 9, az - Math.cos(yaw) * 9);
       look.set(ax + Math.sin(yaw) * 3, 0, az + Math.cos(yaw) * 3); k = 3;
     } else {
-      want.set(ax - Math.sin(yaw) * 6.5 + Math.cos(yaw) * 1.2, 3.4, az - Math.cos(yaw) * 6.5 - Math.sin(yaw) * 1.2);
+      // straight behind the thrower, so the middle of the screen is exactly where the throw goes
+      want.set(ax - Math.sin(yaw) * 6.5, 3.8, az - Math.cos(yaw) * 6.5);
       look.set(ax + Math.sin(yaw) * 12, 1.2, az + Math.cos(yaw) * 12); k = 4;
     }
   }
@@ -1351,10 +1352,12 @@ function updateCamera(dt, time) {
 
 function updateTags() {
   const w = innerWidth, h = innerHeight;
+  // while you aim, your own name tag would sit right on the line of fire, so hide it
+  const aimer = S.phase === 'aim' && !S.flights.length && !S.impactAt ? curPlayer() : null;
   for (const p of S.players) {
     tmpV.set(p.avatar.position.x, p.avatar.position.y + 2.45, p.avatar.position.z).project(camera);
     const vis = S.screen === 'game' && tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1;
-    p.tag.hidden = !vis;
+    p.tag.hidden = !vis || p === aimer;
     if (vis) {
       p.tag.style.left = ((tmpV.x + 1) / 2 * w).toFixed(1) + 'px'; p.tag.style.top = ((1 - tmpV.y) / 2 * h).toFixed(1) + 'px';
       const label = p.name + ' · ' + p.score + (p.heavy > 1 ? ' · ×' + p.heavy : '');
