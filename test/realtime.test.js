@@ -149,7 +149,7 @@ test('reaching the winning score ends the round; again resets it', () => {
   const { room, code, tok, a } = g;
   a.score = WIN_SCORE - 1;
   assert.ok(findHit(g) != null);
-  assert.deepStrictEqual(room.over, { winner: a.id, reason: 'points' });
+  assert.deepStrictEqual(room.over, { winner: a.id, name: a.name, reason: 'points' });
   assert.throws(() => act('throw', code, tok[0], { yaw: 0, pitch: 0.4 }), /over/);
   act('again', code, tok[0]);
   assert.strictEqual(room.over, null);
@@ -365,7 +365,7 @@ test('win conditions in realtime: first to 5, and a timed round with sudden deat
   g.room.win = { type: 'points', points: 5 };
   g.a.score = 4;
   assert.ok(findHit(g) != null);
-  assert.deepStrictEqual(g.room.over, { winner: g.a.id, reason: 'points' });
+  assert.deepStrictEqual(g.room.over, { winner: g.a.id, name: g.a.name, reason: 'points' });
   stopTick(g.room);
   // a timed round: nothing at 9 points before the clock runs out; a tie when it does is sudden death
   const t = game();
@@ -380,7 +380,7 @@ test('win conditions in realtime: first to 5, and a timed round with sudden deat
   assert.strictEqual(t.room.suddenDeath, true, 'a shared lead when time runs out is sudden death');
   t.a.score = 10;
   run(t.room, TICK_MS);
-  assert.deepStrictEqual(t.room.over, { winner: t.a.id, reason: 'time' }, 'the first lone leader wins');
+  assert.deepStrictEqual(t.room.over, { winner: t.a.id, name: t.a.name, reason: 'time' }, 'the first lone leader wins');
   stopTick(t.room);
   // the rule itself
   assert.strictEqual(checkWinner([{ score: 3 }, { score: 9 }], { type: 'time', minutes: 3 }, 100, 50), null, 'clock still running');

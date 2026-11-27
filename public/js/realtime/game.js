@@ -10,7 +10,7 @@ import { audio, sfx } from '../common/audio.js';
 import { THREE, scene, puff, preview, ring, marker, markerMat, easeCamera, fadeBlockingTrees, updateParticles, showPreview, makeBallMesh, removeMesh } from '../common/scene.js';
 import { addPlayer, removePlayer, animateAvatar, updateTags, followed } from '../common/players.js';
 import { THROW_DURATION, THROW_RELEASE_LEFT } from '../common/avatarAnimation.js';
-import { showOver, hideOver } from '../common/over.js';
+import { showOver, hideOver, overWinner } from '../common/over.js';
 import { addFeed, clearFeed } from '../common/feed.js';
 import { R, resetR, me, canPlay } from './state.js';
 import { applySnapshot, interpolate, sendInput } from './net.js';
@@ -150,7 +150,7 @@ function syncFromView(v) {
   // a new round starts clean: no leftover message, feed, splat, or snowballs still flying from the last round
   // (one landing after Play again would show the old round's "got you" message)
   if (!v.over && S.over) { hideOver(); clearFeed(); clearBalls(); R.splatUntil = 0; }
-  if (v.over && !S.over) { const w = S.byId.get(v.over.winner); if (w) { unlock(); showOver(w, v.over.reason); } }
+  if (v.over && !S.over) { const w = overWinner(v.over); if (w) { unlock(); showOver(w, v.over.reason); } }
   renderHUD(true);
 }
 

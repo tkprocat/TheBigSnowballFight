@@ -97,11 +97,19 @@ function handOverHost(room, from) {
   broadcast(room);
 }
 
-function clearOffline(p) { clearTimeout(p.offlineHost); clearTimeout(p.offlineSeat); p.offlineHost = p.offlineSeat = null; }
+function clearOffline(p) { clearTimeout(p.offlineHost); clearTimeout(p.offlineSeat); p.offlineHost = p.offlineSeat = null; p.offlineSince = null; }
+
+// Someone opened the room: if the host has been gone longer than the handover time (and nobody online could take
+// over then), hosting goes to someone online now.
+function checkOverdueHost(room) {
+  const h = room.host;
+  if (h && h.clients.size === 0 && h.offlineSince != null && Date.now() - h.offlineSince >= OFFLINE.host) handOverHost(room, h);
+}
 
 // The last event stream of `p` closed: start the clocks for handing over hosting and freeing the seat.
 function wentOffline(room, p) {
   clearOffline(p);
+  p.offlineSince = Date.now();
   const still = () => rooms.get(room.code) === room && members(room).includes(p) && p.clients.size === 0;
   p.offlineHost = later(OFFLINE.host, `Host handover in room ${room.code}`, () => { if (still() && room.host === p) handOverHost(room, p); });
   p.offlineSeat = later(OFFLINE.seat, `Freeing a seat in room ${room.code}`, () => {
@@ -305,6 +313,7 @@ export const server = http.createServer(async (req, res) => {
     member.clients.add(res);
     clearOffline(member);
     room.lastActive = Date.now();
+    checkOverdueHost(room);
     broadcast(room);
     if (room.started && MODES[room.mode].wake) MODES[room.mode].wake(room);
     const ping = setInterval(() => res.write(': ping\n\n'), 25000);

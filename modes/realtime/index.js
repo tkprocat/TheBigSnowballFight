@@ -123,7 +123,7 @@ export function tick(room, now) {
   const result = checkWinner(room.players, room.win, room.endsAt, now); // endsAt is on the same clock as now (from goAt)
   if (result && result.suddenDeath && !room.suddenDeath) { room.suddenDeath = true; broadcast(room); }
   if (result && result.winner) {
-    room.over = { winner: result.winner.id, reason: result.reason };
+    room.over = { winner: result.winner.id, name: result.winner.name, reason: result.reason };
     stopTick(room);
     sendState(room, now);
     broadcast(room);

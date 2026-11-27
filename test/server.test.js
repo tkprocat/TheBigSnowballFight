@@ -204,3 +204,39 @@ test('a host whose page closes hands over hosting, and the seat is freed later; 
     await new Promise((r) => server.close(r));
   }
 });
+
+test('if nobody could take over when the host went quiet, the next person to open the room becomes host', async () => {
+  const saved = { ...OFFLINE };
+  OFFLINE.host = 30; OFFLINE.seat = 2000;
+  const port = await listening();
+  try {
+    const { host, others, room } = lobby(2);
+    const [hostM, guestM] = room.players;
+    const closeHost = await openStream(port, host.code, host.token);
+    closeHost(); // the guest has no page open either
+    await until(() => hostM.clients.size === 0);
+    await wait(OFFLINE.host + 30);
+    assert.strictEqual(room.host, hostM, 'nobody online to take over yet');
+    await openStream(port, host.code, others[0].token);
+    assert.ok(await until(() => room.host === guestM), 'the guest takes over as soon as they open the room');
+    assert.ok(room.players.includes(hostM), 'well before the seat is freed');
+  } finally {
+    Object.assign(OFFLINE, saved);
+    for (const r of rooms.values()) for (const m of members(r)) for (const res of m.clients) res.end();
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test("the round result keeps the winner's name after they leave", () => {
+  const { host, others, room } = lobby(2);
+  act('start', host.code, host.token);
+  const winner = room.players[0];
+  // a round over as the modes record it (the mode tests check they do), then the winner leaves
+  room.over = { winner: winner.id, name: winner.name, reason: 'points' };
+  act('leave', host.code, host.token);
+  const v = viewFor(room, findMember(host.code, others[0].token).member);
+  assert.ok(!v.players.some((p) => p.id === v.over.winner), 'the winner is gone');
+  assert.strictEqual(v.over.name, 'Host');
+  stop(room);
+});

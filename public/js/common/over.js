@@ -1,8 +1,13 @@
 // The round-over popup, shared by both modes.
 import { S } from './state.js';
-import { $, clearToast } from './dom.js';
+import { $, clearToast, safeName } from './dom.js';
 import { NET } from './net.js';
 import { sfx } from './audio.js';
+
+// The round's winner from a view's `over`: the player, or just their name if they have left since.
+export function overWinner(over) {
+  return S.byId.get(over.winner) || (typeof over.name === 'string' ? { name: safeName(over.name) } : null);
+}
 
 // `reason`: 'time' when the clock decided the round.
 export function showOver(winner, reason) {

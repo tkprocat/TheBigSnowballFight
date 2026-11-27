@@ -97,7 +97,7 @@ test('hits score by body part, move the victim, and reaching 10 wins the round',
   }
   assert.ok(a.score >= 10);
   assert.ok(parts.has('head') || parts.has('body'));
-  assert.deepStrictEqual(room.over, { winner: a.id, reason: 'points' });
+  assert.deepStrictEqual(room.over, { winner: a.id, name: a.name, reason: 'points' });
   assert.throws(() => act('throw', host.code, b.token, { yaw: 0, pitch: 0.5, power: 0.5 }), /over/);
   assert.throws(() => act('again', host.code, b.token), /Only the host/);
   act('again', host.code, host.token);
@@ -242,7 +242,7 @@ test('turn-based timed rounds end on the first throw after the clock, or go to s
   a.x = 0; a.z = 0; b.x = 0; b.z = 20;
   room.cur = 1; room.busyUntil = 0; room.phase = 'aim';
   act('throw', host.code, b.token, { yaw: Math.PI, pitch: 0.5, power: 0.1 });
-  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.deepStrictEqual(room.over, { winner: b.id, name: b.name, reason: 'time' });
 });
 
 test('turn-based: when the clock runs out the scores at that moment decide it; later throws and packs are refused', () => {
@@ -256,7 +256,7 @@ test('turn-based: when the clock runs out the scores at that moment decide it; l
   room.endsAt = Date.now() - 1;
   room.cur = 0; room.busyUntil = 0; room.phase = 'aim';
   assert.throws(() => act('throw', host.code, a.token, { yaw: 0, pitch: 0.3, power: 0.3 }), /Time's up/);
-  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' }, 'the leader at the deadline wins');
+  assert.deepStrictEqual(room.over, { winner: b.id, name: b.name, reason: 'time' }, 'the leader at the deadline wins');
   assert.strictEqual(a.score, 4, 'a throw after the deadline never scores');
   // packing after the deadline is refused too
   const p2 = lobby(2);
@@ -281,7 +281,7 @@ test('turn-based: a timed round ends right at the deadline, without waiting for 
   turnbased.clockStarted(room);
   assert.strictEqual(room.over, null);
   await new Promise((r) => setTimeout(r, 400));
-  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.deepStrictEqual(room.over, { winner: b.id, name: b.name, reason: 'time' });
   assert.strictEqual(room.turnEnds, null, 'no turn running after the round ended');
 });
 
@@ -296,7 +296,7 @@ test('turn-based: a throw refused at the deadline still tells everyone the round
   const sent = [];
   b.clients.add({ write: (s) => sent.push(s) });
   assert.throws(() => act('throw', host.code, a.token, { yaw: 0, pitch: 0.3, power: 0.3 }), /Time's up/);
-  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.deepStrictEqual(room.over, { winner: b.id, name: b.name, reason: 'time' });
   assert.ok(sent.some((s) => s.includes('"over":{"winner":' + JSON.stringify(b.id))), 'the result went out to the other player');
   b.clients.clear(); clearTimeout(room.endTimer); clearTimeout(room.clock);
 });
