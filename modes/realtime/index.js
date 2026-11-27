@@ -11,6 +11,11 @@ import {
 import { rand, place, broadcast, broadcastEvent, broadcastSay, humanWatching } from '../../rooms.js';
 import { botStep, PLANS_PER_TICK } from './bots.js';
 
+// Position reports: how much faster than full speed a report may look (timing jitter), and how much unused
+// distance carries over between reports, in metres.
+const MOVE_TOLERANCE = 1.15;
+const MOVE_SLACK = 0.5;
+
 // The server's clock; tests swap it for a fake one.
 export const clock = { now: () => Date.now() };
 
@@ -22,7 +27,7 @@ function freshState(room) {
 }
 
 function resetPlayer(p, now) {
-  p.ammo = 0; p.coolUntil = 0; p.chargeAt = 0; p.lastIn = 0; p.vx = 0; p.vz = 0; p.ai = null; p.sprinting = false;
+  p.ammo = 0; p.coolUntil = 0; p.chargeAt = 0; p.lastIn = 0; p.moveSlack = MOVE_SLACK; p.vx = 0; p.vz = 0; p.ai = null; p.sprinting = false;
   p.shieldUntil = now + SHIELD_MS; p.fix = (p.fix || 0) + 1;
 }
 
@@ -118,7 +123,7 @@ export function tick(room, now) {
   const result = checkWinner(room.players, room.win, room.endsAt, now); // endsAt is on the same clock as now (from goAt)
   if (result && result.suddenDeath && !room.suddenDeath) { room.suddenDeath = true; broadcast(room); }
   if (result && result.winner) {
-    room.over = { winner: result.winner.id, reason: result.reason };
+    room.over = { winner: result.winner.id, name: result.winner.name, reason: result.reason };
     stopTick(room);
     sendState(room, now);
     broadcast(room);
@@ -216,8 +221,13 @@ export default {
       member.sprinting = sprint === true;
       const to = { x: round3(x), z: round3(z) };
       const d = Math.hypot(to.x - member.x, to.z - member.z);
+      // what this report may cover: the time since the last one at full speed (a little extra for uneven timing),
+      // plus whatever earlier reports left unused, up to MOVE_SLACK. The leftover can't grow past that, so sending
+      // reports faster doesn't buy distance.
       const speed = member.sprinting ? SPRINT_SPEED : RUN_SPEED;
-      if (d > speed * elapsed * 1.25 + 0.3 || !pathClear(member, to, room.map)) { member.fix += 1; return 'quiet'; }
+      const allowed = speed * elapsed * MOVE_TOLERANCE + member.moveSlack;
+      if (d > allowed || !pathClear(member, to, room.map)) { member.moveSlack = Math.min(MOVE_SLACK, allowed); member.fix += 1; return 'quiet'; }
+      member.moveSlack = Math.min(MOVE_SLACK, allowed - d);
       member.vx = (to.x - member.x) / elapsed; member.vz = (to.z - member.z) / elapsed;
       member.x = to.x; member.z = to.z;
       return 'quiet';
