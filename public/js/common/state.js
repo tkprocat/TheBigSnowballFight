@@ -7,5 +7,8 @@ export const S = {
   players: [], byId: new Map(),
   over: false,
   watching: false,    // spectating: no player of our own
-  followId: null,     // the player a spectator's camera follows (Tab, or tap a name); null = the default
+  followId: null,
+  win: null,          // how this round is won (see shared/win.js)
+  timeEnds: 0,        // performance.now() when a timed round's clock runs out (0 = not timed)
+  suddenDeath: false,     // the player a spectator's camera follows (Tab, or tap a name); null = the default
 };

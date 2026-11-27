@@ -10,6 +10,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CHAT_LINES, EMOTES, MAX_PLAYERS, COLORS, BOT_NAMES, BOT_LEVELS, makeMap } from './public/shared/physics.js';
+import { DEFAULT_WIN, cleanWin } from './public/shared/win.js';
 import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay, broadcastEvent } from './rooms.js';
 import turnbased from './modes/turnbased/index.js';
 import realtime from './modes/realtime/index.js';
@@ -46,7 +47,7 @@ function pickColor(room, wanted) {
 
 function newRoom(code) {
   return {
-    code, mode: 'turn', botLevel: 'normal', players: [], spectators: [], host: null, started: false, over: null, seed: 1, round: 0,
+    code, mode: 'turn', botLevel: 'normal', win: { ...DEFAULT_WIN }, endsAt: null, suddenDeath: false, players: [], spectators: [], host: null, started: false, over: null, seed: 1, round: 0,
     cur: 0, turn: 0, phase: 'move', throwN: 0, packN: 0, lastPack: null, lastThrow: null, busyUntil: 0, turnEnds: null,
     clock: null, botTimer: null, rt: null, lastActive: Date.now(),
   };
@@ -86,6 +87,15 @@ function uniqueName(room, name) {
 function stopRoom(room) { for (const mode of Object.values(MODES)) mode.stop(room); }
 
 function requireHost(room, member) { if (room.host !== member) throw new Error('Only the host can do that'); }
+
+// A timed round's clock: it starts when play does (in realtime, at GO after the start countdown).
+function startClock(room) {
+  room.suddenDeath = false;
+  room.endsAt = room.win && room.win.type === 'time'
+    ? (room.mode === 'realtime' && room.rt && room.rt.goAt ? room.rt.goAt : Date.now()) + room.win.minutes * 60000
+    : null;
+  if (MODES[room.mode].clockStarted) MODES[room.mode].clockStarted(room);
+}
 
 // Fresh scores and spots for a new round.
 function resetRound(room) {
@@ -147,6 +157,15 @@ const lobbyActions = {
     room.mode = mode;
   },
 
+  // How a round is won: first to N points, or the most points when time runs out. Lobby only.
+  setWin(body, room, member) {
+    requireHost(room, member);
+    if (room.started) throw new Error('Pick how to win before the game starts');
+    const win = cleanWin(body);
+    if (!win) throw new Error('Unknown win setting');
+    room.win = win;
+  },
+
   // How good the computer players are: easy, normal or hard. Lobby only.
   setBotLevel({ level }, room, member) {
     requireHost(room, member);
@@ -185,6 +204,7 @@ const lobbyActions = {
     room.over = null;
     resetRound(room);
     MODES[room.mode].start(room);
+    startClock(room);
   },
 
   again(_body, room, member) {
@@ -193,6 +213,7 @@ const lobbyActions = {
     room.over = null; room.round += 1;
     resetRound(room);
     MODES[room.mode].again(room);
+    startClock(room);
   },
 
   // Quick chat: one of the fixed lines or emotes. Works in the lobby and in the game, for spectators too.

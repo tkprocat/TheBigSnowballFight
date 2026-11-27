@@ -97,7 +97,7 @@ test('hits score by body part, move the victim, and reaching 10 wins the round',
   }
   assert.ok(a.score >= 10);
   assert.ok(parts.has('head') || parts.has('body'));
-  assert.deepStrictEqual(room.over, { winner: a.id });
+  assert.deepStrictEqual(room.over, { winner: a.id, reason: 'points' });
   assert.throws(() => act('throw', host.code, b.token, { yaw: 0, pitch: 0.5, power: 0.5 }), /over/);
   assert.throws(() => act('again', host.code, b.token), /Only the host/);
   act('again', host.code, host.token);
@@ -223,4 +223,80 @@ test('bots take their own turn; a room with no people left is removed', async ()
   assert.strictEqual(room.turn, 2);
   act('leave', host.code, host.token);
   assert.ok(!rooms.has(host.code));
+});
+
+test('turn-based timed rounds end on the first throw after the clock, or go to sudden death on a tie', () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const [a, b] = room.players;
+  room.map = { walls: [], trees: [], deco: [] };
+  a.x = 0; a.z = 0; b.x = 0; b.z = 20; // throws below go the other way, so they never hit
+  a.score = 5; b.score = 5;
+  room.endsAt = Date.now() - 1;
+  room.cur = 0; room.busyUntil = 0; room.phase = 'aim';
+  act('throw', host.code, a.token, { yaw: Math.PI, pitch: 0.5, power: 0.1 }); // a throw that can't hit anyone
+  assert.strictEqual(room.over, null);
+  assert.strictEqual(room.suddenDeath, true, 'tied when time ran out: sudden death');
+  b.score = 6;
+  a.x = 0; a.z = 0; b.x = 0; b.z = 20;
+  room.cur = 1; room.busyUntil = 0; room.phase = 'aim';
+  act('throw', host.code, b.token, { yaw: Math.PI, pitch: 0.5, power: 0.1 });
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+});
+
+test('turn-based: when the clock runs out the scores at that moment decide it; later throws and packs are refused', () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const [a, b] = room.players;
+  room.map = { walls: [], trees: [], deco: [] };
+  a.x = 0; a.z = 0; b.x = 0; b.z = 3;
+  a.score = 4; b.score = 5; // a is behind when time runs out
+  room.endsAt = Date.now() - 1;
+  room.cur = 0; room.busyUntil = 0; room.phase = 'aim';
+  assert.throws(() => act('throw', host.code, a.token, { yaw: 0, pitch: 0.3, power: 0.3 }), /Time's up/);
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' }, 'the leader at the deadline wins');
+  assert.strictEqual(a.score, 4, 'a throw after the deadline never scores');
+  // packing after the deadline is refused too
+  const p2 = lobby(2);
+  act('setWin', p2.host.code, p2.host.token, { type: 'time', minutes: 3 });
+  act('start', p2.host.code, p2.host.token);
+  p2.room.players[1].score = 1;
+  p2.room.endsAt = Date.now() - 1;
+  p2.room.cur = 0; p2.room.busyUntil = 0;
+  assert.throws(() => act('pack', p2.host.code, p2.host.token), /Time's up/);
+  assert.strictEqual(p2.room.over.reason, 'time');
+  clearTimeout(p2.room.endTimer); clearTimeout(p2.room.clock);
+});
+
+test('turn-based: a timed round ends right at the deadline, without waiting for a throw', async () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const turnbased = (await import('../modes/turnbased/index.js')).default;
+  const [a, b] = room.players;
+  a.score = 2; b.score = 3;
+  room.endsAt = Date.now() + 250; // pretend the clock is about to run out
+  turnbased.clockStarted(room);
+  assert.strictEqual(room.over, null);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.strictEqual(room.turnEnds, null, 'no turn running after the round ended');
+});
+
+test('turn-based: a throw refused at the deadline still tells everyone the round is over', () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const [a, b] = room.players;
+  a.score = 1; b.score = 3;
+  room.cur = 0; room.busyUntil = 0;
+  room.endsAt = Date.now() - 1; // expired, but the deadline timer hasn't fired yet
+  const sent = [];
+  b.clients.add({ write: (s) => sent.push(s) });
+  assert.throws(() => act('throw', host.code, a.token, { yaw: 0, pitch: 0.3, power: 0.3 }), /Time's up/);
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.ok(sent.some((s) => s.includes('"over":{"winner":' + JSON.stringify(b.id))), 'the result went out to the other player');
+  b.clients.clear(); clearTimeout(room.endTimer); clearTimeout(room.clock);
 });

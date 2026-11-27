@@ -27,6 +27,7 @@ export function applySnapshot(snap, onEvents, onLoose) {
       if (fix !== R.fixSeen) { R.fixSeen = fix; p.x = num(x, p.x); p.z = num(z, p.z); p.rx = p.x; p.rz = p.z; }
     } else pos.set(id, [num(x), num(z), num(yaw), clamp(num(pitch, 0.5), PITCH_MIN, PITCH_MAX)]);
   }
+  if (typeof snap.tl === 'number') S.timeEnds = performance.now() + snap.tl;
   if (typeof snap.go === 'number') R.goUntil = performance.now() + Math.max(0, Math.min(5000, snap.go));
   R.snaps.push({ at: performance.now(), pos });
   while (R.snaps.length > 30) R.snaps.shift();

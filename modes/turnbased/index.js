@@ -1,11 +1,12 @@
 // Turn-based mode: one player at a time walks up to 5 m, then throws (or packs a heavy snowball).
 // The server decides every throw's result; browsers only replay it.
 import {
-  TAU, PITCH_MIN, PITCH_MAX, WIN_SCORE, HIT_POINTS, HEAVY_MULT, PACK_MS, TURN_LIMIT,
+  TAU, PITCH_MIN, PITCH_MAX, HIT_POINTS, HEAVY_MULT, PACK_MS, TURN_LIMIT,
   clamp, simulate, windFor, throwShowMs, clampMove, standOk,
 } from '../../public/shared/physics.js';
 import { rand, place, broadcast, broadcastEvent, broadcastSay, later } from '../../rooms.js';
 import { botTurn } from './bots.js';
+import { checkWinner } from '../../public/shared/win.js';
 
 const BOT_DELAY = Number(process.env.BOT_DELAY_MS ?? 1500); // pause before a bot throws, so people can follow along
 
@@ -17,10 +18,39 @@ function clearTimers(room) {
   room.clock = room.botTimer = null;
 }
 
+// A timed round ends on the scores when the clock runs out: one leader wins; a tie is sudden death (the next throw
+// that leaves one player leading alone wins). Called by a timer at the deadline and before any throw or pack, so
+// nothing done after time is up can change the result. Returns true if the round is over. Any change it makes is
+// broadcast right here: the request that noticed the deadline may be refused ("Time's up!"), and a refused request
+// doesn't broadcast, so without this everyone would be left on the game screen.
+export function resolveClock(room) {
+  if (room.over) return true;
+  if (!room.endsAt || room.suddenDeath || Date.now() < room.endsAt) return false;
+  const result = checkWinner(room.players, room.win, room.endsAt, Date.now());
+  if (result && result.winner) {
+    room.over = { winner: result.winner.id, reason: 'time' };
+    clearTimers(room); clearTimeout(room.endTimer); room.turnEnds = null;
+    broadcast(room);
+    return true;
+  }
+  if (result && result.suddenDeath) { room.suddenDeath = true; broadcast(room); }
+  return false;
+}
+
+// Called when a round's clock starts: end the round right at the deadline, not at the next throw.
+function scheduleEnd(room) {
+  clearTimeout(room.endTimer); room.endTimer = null;
+  if (!room.endsAt) return;
+  room.endTimer = later(Math.max(0, room.endsAt - Date.now()) + 10, `Round clock in room ${room.code}`, () => {
+    if (room.started && !room.over) resolveClock(room); // broadcasts what it decides
+  });
+}
+
 function startTurn(room) {
   clearTimers(room);
   room.turnEnds = null;
   if (!room.started || room.over || !room.players.length) return;
+  if (resolveClock(room)) return; // time ran out: no new turn
   const p = curPlayer(room);
   room.phase = 'move';
   const wait = Math.max(0, room.busyUntil - Date.now());
@@ -35,6 +65,7 @@ function startTurn(room) {
 
 // Throw a snowball for player p. Decides the result, scores it, moves a hit player, and moves on to the next turn.
 function doThrow(room, p, yaw, pitch, power) {
+  if (resolveClock(room)) return; // time ran out before this throw (e.g. the turn timer's throw): it doesn't count
   const wind = windFor(room.seed, room.turn);
   const targets = room.players.filter((o) => o !== p).map((o) => ({ id: o.id, x: o.x, z: o.z }));
   const heavy = p.heavy || 1;
@@ -55,8 +86,13 @@ function doThrow(room, p, yaw, pitch, power) {
     if (victim.cpu && rand() < 0.5) broadcastSay(room, victim, { line: 3 });
   }
   room.lastActive = Date.now();
-  if (p.score >= WIN_SCORE) {
-    room.over = { winner: p.id };
+  // points: first to the target. Timed: only sudden death is decided by a throw (the clock itself is resolveClock's)
+  const result = room.win && room.win.type === 'time'
+    ? (room.suddenDeath ? checkWinner(room.players, room.win, room.endsAt, Infinity) : null)
+    : checkWinner(room.players, room.win, room.endsAt, Date.now());
+  if (result && result.winner) {
+    room.over = { winner: result.winner.id, reason: result.reason };
+    clearTimeout(room.endTimer);
     clearTimers(room); room.turnEnds = null;
     return;
   }
@@ -71,6 +107,7 @@ function nextTurn(room) {
 
 // Spend the turn packing a heavy snowball: your next hit counts triple.
 function doPack(room, p) {
+  if (resolveClock(room)) throw new Error("Time's up!");
   if ((p.heavy || 1) > 1) throw new Error('You already have a heavy snowball. Throw it first');
   p.heavy = HEAVY_MULT;
   room.lastPack = { n: ++room.packN, by: p.id, heavy: p.heavy };
@@ -87,6 +124,7 @@ function toPitch(v) { return typeof v === 'number' && Number.isFinite(v) ? clamp
 function requireTurn(room, member) {
   if (!room.started) throw new Error('The game has not started');
   if (room.over) throw new Error('The round is over');
+  if (resolveClock(room)) throw new Error("Time's up!"); // the clock ran out just now: the scores at that moment decide it
   if (curPlayer(room) !== member) throw new Error('It is not your turn');
 }
 
@@ -111,7 +149,10 @@ export default {
     startTurn(room);
   },
 
-  stop: clearTimers,
+  stop(room) { clearTimers(room); clearTimeout(room.endTimer); room.endTimer = null; },
+
+  // the round's clock just started (server.js startClock)
+  clockStarted: scheduleEnd,
 
   // Someone joined a game in progress: they get a spot and wait for their turn.
   join(room, p) { place(room, p); },
