@@ -14,6 +14,8 @@ import { DEFAULT_WIN, cleanWin } from './public/shared/win.js';
 import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay, broadcastEvent } from './rooms.js';
 import turnbased from './modes/turnbased/index.js';
 import realtime from './modes/realtime/index.js';
+import { openStats, lobbyCreated, roundStarted, roundEnded } from './stats.js';
+import { handleAdmin } from './admin.js';
 
 export { rooms, viewFor };
 MODES.turn = turnbased;
@@ -49,7 +51,7 @@ function newRoom(code) {
   return {
     code, mode: 'turn', botLevel: 'normal', win: { ...DEFAULT_WIN }, endsAt: null, suddenDeath: false, players: [], spectators: [], host: null, started: false, over: null, seed: 1, round: 0,
     cur: 0, turn: 0, phase: 'move', throwN: 0, packN: 0, lastPack: null, lastThrow: null, busyUntil: 0, turnEnds: null,
-    clock: null, botTimer: null, rt: null, lastActive: Date.now(),
+    clock: null, botTimer: null, rt: null, createdAt: Date.now(), lastActive: Date.now(),
   };
 }
 
@@ -71,7 +73,7 @@ function removeMember(room, p) {
   if (i >= 0) room.players.splice(i, 1);
   const wasHost = room.host === p;
   if (wasHost) room.host = humans(room)[0] || null;
-  if (!humans(room).length) { stopRoom(room); rooms.delete(room.code); return; }
+  if (!humans(room).length) { forgetRoom(room); return; }
   if (i >= 0 && room.started) MODES[room.mode].remove(room, p, i);
   // tell everyone who left (people only; removing a bot is the host's own doing), and who hosts now
   if (!p.cpu) broadcastEvent(room, 'notice', { left: p.name, ...(wasHost && room.host ? { host: room.host.id, hostName: room.host.name } : {}) });
@@ -85,6 +87,13 @@ function uniqueName(room, name) {
 }
 
 function stopRoom(room) { for (const mode of Object.values(MODES)) mode.stop(room); }
+
+// The room goes away: a round still going counts as abandoned in the statistics.
+function forgetRoom(room) {
+  if (room.started && !room.over) roundEnded(room, true);
+  stopRoom(room);
+  rooms.delete(room.code);
+}
 
 function requireHost(room, member) { if (room.host !== member) throw new Error('Only the host can do that'); }
 
@@ -110,6 +119,7 @@ const lobbyActions = {
     rooms.set(room.code, room);
     const result = actions.join({ ...body, code: room.code });
     room.host = room.players[0];
+    lobbyCreated();
     return result;
   },
 
@@ -205,6 +215,7 @@ const lobbyActions = {
     resetRound(room);
     MODES[room.mode].start(room);
     startClock(room);
+    roundStarted(room);
   },
 
   again(_body, room, member) {
@@ -214,6 +225,7 @@ const lobbyActions = {
     resetRound(room);
     MODES[room.mode].again(room);
     startClock(room);
+    roundStarted(room, true);
   },
 
   // Quick chat: one of the fixed lines or emotes. Works in the lobby and in the game, for spectators too.
@@ -288,6 +300,8 @@ export const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/admin' || url.pathname.startsWith('/api/admin')) return handleAdmin(req, res, url);
+
   if (url.pathname === '/api/hello') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true, game: 'snowball', modes: Object.keys(MODES) }));
@@ -325,11 +339,14 @@ export const server = http.createServer(async (req, res) => {
 });
 
 setInterval(() => {
-  for (const [code, room] of rooms)
-    if (Date.now() - room.lastActive > ROOM_TTL) { stopRoom(room); rooms.delete(code); }
+  for (const room of rooms.values())
+    if (Date.now() - room.lastActive > ROOM_TTL) forgetRoom(room);
 }, 600e3).unref();
 
 // Start listening only when run directly (`node server.js`); tests import this file instead.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const statsFile = openStats();
+  console.log(statsFile ? `📊 Anonymous statistics in ${statsFile}` : '📊 Anonymous statistics in memory only (set STATS_DIR to keep them)');
+  if (!process.env.ADMIN_TOKEN) console.log('🔒 Admin dashboard off (set ADMIN_TOKEN to turn it on at /admin)');
   server.listen(PORT, () => console.log(`❄️  The Big Snowball Fight running on http://localhost:${PORT}`));
 }

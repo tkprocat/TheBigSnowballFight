@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Snowball Admin</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --border: #e3e6ea; --text: #191919; --muted: #666666;
+    --bar: #257de0; --bar-hover: #1757ac; --grid: #eceef1; --good: #008a17; --warn: #b26b00; --bad: #c62828;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111214; --surface: #191919; --border: #2c2e31; --text: #efefef; --muted: #9c9c9c;
+      --bar: #338ced; --bar-hover: #84b9f3; --grid: #26282b; --good: #0aac23; --warn: #e0a030; --bad: #eb6263;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111214; --surface: #191919; --border: #2c2e31; --text: #efefef; --muted: #9c9c9c;
+    --bar: #338ced; --bar-hover: #84b9f3; --grid: #26282b; --good: #0aac23; --warn: #e0a030; --bad: #eb6263;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .v { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--muted); font-size: 12px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.n, th.n { text-align: right; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }
+  .pill.playing { color: var(--good); border-color: currentColor; }
+  .pill.over { color: var(--warn); border-color: currentColor; }
+  .chart { position: relative; height: 180px; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--muted); padding-top: 8px; }
+  .chart .col { flex: 1; height: 100%; display: flex; align-items: flex-end; cursor: default; }
+  .chart .bar { width: 100%; background: var(--bar); border-radius: 4px 4px 0 0; min-height: 0; }
+  .chart .col:hover .bar { background: var(--bar-hover); }
+  .axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .tip { position: absolute; pointer-events: none; background: var(--text); color: var(--surface); padding: 6px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; transform: translate(-50%, -100%); display: none; z-index: 2; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+  .grid2 > * { min-width: 0; }
+  .grid2 .card { margin-bottom: 0; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input, button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  input { flex: 1; min-width: 200px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--bar); border-color: var(--bar); color: #fff; }
+  .err { color: var(--bad); margin-top: 8px; min-height: 1.4em; }
+  .empty { color: var(--muted); padding: 12px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>❄️ The Big Snowball Fight · Admin</h1>
+    <span class="muted" id="status"></span>
+  </header>
+
+  <section class="card" id="login">
+    <h2>Admin token</h2>
+    <p class="muted">The value of the server's <code>ADMIN_TOKEN</code>. It stays in this browser tab only.</p>
+    <form id="loginForm">
+      <input type="password" id="token" autocomplete="current-password" placeholder="Token" required>
+      <button class="primary" type="submit">Open dashboard</button>
+    </form>
+    <div class="err" id="err"></div>
+  </section>
+
+  <div id="dash" hidden>
+    <div class="tiles" id="liveTiles"></div>
+
+    <section class="card">
+      <h2>Live rooms</h2>
+      <div class="scroll"><table id="rooms"></table></div>
+    </section>
+
+    <h2 style="margin-top:24px">Statistics <span class="muted" id="since" style="font-weight:400"></span></h2>
+    <div class="tiles" id="statTiles"></div>
+
+    <section class="card">
+      <h2>Games started per day, last 30 days</h2>
+      <div class="chart" id="chart" role="img"></div>
+      <div class="axis"><span id="axisFrom"></span><span id="axisTo"></span></div>
+      <div class="tip" id="tip"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <h2>By mode</h2>
+        <div class="scroll"><table id="modes"></table></div>
+      </section>
+      <section class="card">
+        <h2>People per game</h2>
+        <div class="scroll"><table id="players"></table></div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:16px">
+      <h2>Latest games</h2>
+      <div class="scroll"><table id="recent"></table></div>
+    </section>
+
+    <button id="logout">Forget token</button>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const MODE = { turn: 'Turn-based', realtime: 'Realtime' };
+let token = null, timer = null;
+try { token = sessionStorage.getItem('adminToken'); } catch {}
+
+function dur(ms) {
+  if (ms == null) return '–';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + String(s % 60).padStart(2, '0') + 's';
+  return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+}
+const ago = (iso) => dur(Date.now() - Date.parse(iso)) + ' ago';
+const winText = (w) => !w ? '' : w.type === 'time' ? w.minutes + ' min' : 'first to ' + w.points;
+
+function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+function tiles(box, items) {
+  box.replaceChildren(...items.map(([v, l]) => { const t = el('div', null, 'tile'); t.append(el('div', String(v), 'v'), el('div', l, 'l')); return t; }));
+}
+// cols: [header, fn(row) -> text | Node, numeric?]
+function table(t, cols, rows, empty) {
+  const head = el('tr');
+  for (const [h, , n] of cols) head.append(el('th', h, n ? 'n' : ''));
+  const body = rows.map((r) => {
+    const tr = el('tr');
+    for (const [, fn, n] of cols) { const v = fn(r); const td = el('td', v instanceof Node ? null : v, n ? 'n' : ''); if (v instanceof Node) td.append(v); tr.append(td); }
+    return tr;
+  });
+  if (!rows.length) { const tr = el('tr'); const td = el('td', empty, 'empty'); td.colSpan = cols.length; tr.append(td); body.push(tr); }
+  t.replaceChildren(el('thead'), el('tbody'));
+  t.tHead.append(head); t.tBodies[0].append(...body);
+}
+
+function chart(days) {
+  const box = $('chart'), tip = $('tip');
+  const max = Math.max(1, ...days.map((d) => d.started));
+  box.replaceChildren(...days.map((d) => {
+    const col = el('div', null, 'col'), bar = el('div', null, 'bar');
+    bar.style.height = (d.started / max * 100) + '%';
+    col.append(bar);
+    col.addEventListener('mouseenter', () => {
+      tip.textContent = `${d.day}: ${d.started} started, ${d.finished} finished, ${d.abandoned} abandoned, ${d.lobbies} lobbies`;
+      const r = col.getBoundingClientRect(), p = box.parentElement.getBoundingClientRect();
+      tip.style.left = Math.min(Math.max(r.left - p.left + r.width / 2, 120), p.width - 120) + 'px';
+      tip.style.top = (r.top - p.top + 4) + 'px';
+      tip.style.display = 'block';
+    });
+    col.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+    return col;
+  }));
+  box.setAttribute('aria-label', 'Games started per day: ' + days.map((d) => `${d.day} ${d.started}`).join(', '));
+  $('axisFrom').textContent = days[0].day; $('axisTo').textContent = days[days.length - 1].day;
+}
+
+function render(d) {
+  const L = d.live, S = d.stats;
+  tiles($('liveTiles'), [[L.rooms, 'rooms open'], [L.playing, 'games in progress'], [L.lobbies, 'waiting in lobby'], [L.online, 'people connected'], [L.humans, 'people in rooms'], [L.bots, 'bots (' + L.botsPlaying + ' playing)']]);
+  table($('rooms'), [
+    ['Code', (r) => r.code],
+    ['Mode', (r) => MODE[r.mode] || r.mode],
+    ['State', (r) => el('span', r.state, 'pill ' + r.state)],
+    ['People', (r) => r.humans, true],
+    ['Connected', (r) => r.online, true],
+    ['Bots', (r) => r.bots, true],
+    ['Watching', (r) => r.spectators, true],
+    ['Round', (r) => r.round || '–', true],
+    ['Win', (r) => winText(r.win)],
+    ['Top score', (r) => r.topScore, true],
+    ['Round time', (r) => dur(r.roundMs), true],
+    ['Open for', (r) => dur(r.ageMs), true],
+    ['Idle', (r) => dur(r.idleMs), true],
+  ], L.list, 'No rooms right now.');
+
+  $('since').textContent = S.since ? '· since ' + S.since.slice(0, 10) + (S.persisted ? '' : ' (memory only: set STATS_DIR to keep them)') : (S.persisted ? '' : '· memory only: set STATS_DIR to keep them');
+  const ended = S.finished + S.abandoned;
+  tiles($('statTiles'), [[S.lobbies, 'lobbies created'], [S.started, 'games started'], [S.rematches, 'of them rematches'], [S.finished, 'games finished'],
+    [ended ? Math.round(S.abandoned / ended * 100) + '%' : '–', 'abandoned'], [S.finished ? Math.round(S.botWins / S.finished * 100) + '%' : '–', 'won by a bot']]);
+  chart(S.days);
+  table($('modes'), [
+    ['Mode', ([m]) => MODE[m] || m], ['Started', ([, r]) => r.started, true], ['Finished', ([, r]) => r.finished, true],
+    ['Abandoned', ([, r]) => r.abandoned, true], ['Avg length', ([, r]) => dur(r.avgMs), true],
+    ['Avg people', ([, r]) => r.avgHumans ?? '–', true], ['Avg bots', ([, r]) => r.avgBots ?? '–', true],
+  ], Object.entries(S.modes), 'No games yet.');
+  const pl = Object.entries(S.players).map(([n, c]) => [+n, c]).sort((a, b) => a[0] - b[0]);
+  table($('players'), [['People in the game', ([n]) => n === 0 ? '0 (bots only)' : n, true], ['Games', ([, c]) => c, true],
+    ['Share', ([, c]) => Math.round(c / S.started * 100) + '%', true]], pl, 'No games yet.');
+  table($('recent'), [
+    ['When', (r) => ago(r.t)], ['Mode', (r) => MODE[r.mode] || r.mode], ['People', (r) => r.humans, true], ['Bots', (r) => r.bots, true],
+    ['Length', (r) => dur(r.ms), true], ['Ended by', (r) => r.how], ['Winner', (r) => r.winner || '–'],
+  ], S.recent, 'No finished games yet.');
+  $('status').textContent = 'Updated ' + new Date(d.now).toLocaleTimeString() + ' · server up ' + dur(d.uptimeS * 1000);
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin', { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(d.error || 'Error ' + r.status), { status: r.status });
+    $('login').hidden = true; $('dash').hidden = false; $('err').textContent = '';
+    render(d);
+  } catch (e) {
+    if (e.status === 401 || e.status === 429) { logout(); $('err').textContent = e.message; }
+    else $('status').textContent = 'Can\'t reach the server (' + e.message + '), retrying…';
+  }
+}
+function start() { clearInterval(timer); load(); timer = setInterval(load, 5000); }
+function logout() {
+  clearInterval(timer); token = null;
+  try { sessionStorage.removeItem('adminToken'); } catch {}
+  $('dash').hidden = true; $('login').hidden = false; $('status').textContent = '';
+}
+$('loginForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  token = $('token').value.trim(); $('token').value = '';
+  try { sessionStorage.setItem('adminToken', token); } catch {}
+  start();
+});
+$('logout').addEventListener('click', logout);
+if (token) start();
+</script>
+</body>
+</html>

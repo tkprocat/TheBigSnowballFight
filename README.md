@@ -13,7 +13,7 @@ Quick chat (fixed lines and emotes: wave, dance, cheer) works in the lobby and i
 npm start
 ```
 
-Then open http://localhost:3000. Node 22 or newer (the oldest Node LTS still supported), no dependencies, no build step. Set `PORT` to change the port. To play with friends over the internet, deploy to any Node host or run the Docker image below.
+Then open http://localhost:3000. Node 22 or newer (the oldest Node LTS still supported), no dependencies, no build step. Set `PORT` to change the port, `ADMIN_TOKEN` to turn on the admin dashboard, and `STATS_DIR` to keep statistics (see below). To play with friends over the internet, deploy to any Node host or run the Docker image below.
 
 ## Docker
 
@@ -33,9 +33,27 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      ADMIN_TOKEN: change-me-to-a-long-random-string # turns on the admin dashboard at /admin
+    volumes:
+      - snowball-data:/data # anonymous statistics
+
+volumes:
+  snowball-data:
 ```
 
 Lobbies live in memory, so a restart ends games in progress.
+
+## Admin dashboard and statistics
+
+Set `ADMIN_TOKEN` to a long random string (for example `openssl rand -hex 24`) and open `/admin`. Paste the token once (it stays in that browser tab only) and the page shows, refreshing every 5 seconds:
+
+- **Live:** every open room: its code, mode, lobby/playing/over, how many people are seated and connected, bots, spectators, round, win setting, top score, how long the round and the room have been going, and how long it's been idle.
+- **Statistics:** lobbies created, games started (and rematches), finished and abandoned, how often a bot wins, games started per day for the last 30 days, average game length and players per mode, how many people play per game, and the latest 50 games.
+
+Without `ADMIN_TOKEN`, `/admin` is a 404. The data comes from `GET /api/admin` with `Authorization: Bearer <token>`; after 10 wrong tokens in 10 minutes an address is refused for a while.
+
+The statistics are anonymous: no names, lobby codes, tokens or IP addresses, only counts and times. With `STATS_DIR` set, each event is one JSON line appended to `STATS_DIR/stats.jsonl` and read back at startup, so totals survive restarts. The Docker image sets `STATS_DIR=/data`; mount a volume there (as above) or the file goes away with the container. Without `STATS_DIR` (plain `npm start`), statistics are kept in memory only. To start counting again, delete the file.
 
 ## Playing
 
@@ -75,6 +93,7 @@ Every realtime throw goes at the same speed, so there is no power meter: the ang
 
 - `public/shared/physics.js` holds the game rules and physics (fixed 1/120 s steps, gravity, wind, trees, snow walls, snowmen, the two maps (the large realtime one with its forts), spawn points, hit tests, the turn-based computer player's aim). `public/shared/realtimeRules.js` adds the realtime rules: running and sliding along walls, loose snowballs, stepping a snowball in flight, and the realtime bots' aim. Both are shared by the browser and the server.
 - `server.js` runs lobbies (modes, bots, spectators, chat). Clients send actions to `POST /api/<action>` and get room updates over Server-Sent Events from `GET /events`. `rooms.js` holds what both modes share (members, views, sending updates).
+- `admin.js` serves the admin dashboard (`admin/index.html`, `GET /api/admin`), and `stats.js` keeps the anonymous statistics.
 - `modes/turnbased/` is the turn-based game on the server: whose turn it is, keeping moves inside the 5 m ring and out of walls and trees, simulating each throw, scores, the turn timer, and the bots (`bots.js`).
 - `modes/realtime/` is the realtime game on the server, a 30-per-second tick that sends positions 15 times a second. The server is the authority on everything that scores, to make cheating hard: it owns snowball counts, pickups, the throw cooldown, scores and protection after a hit, and it steps every snowball in flight against where players stand right now and decides each hit. Browsers report where they are (refused if faster than running or through a wall, and the player snaps back) and ask to throw: a throw carries only a direction (every throw goes at the same speed) and starts from where the server has you. Bots (`bots.js`) pick up, look for someone in sight, and throw through the same checks. Bots pause while nobody has the room open.
 - `public/index.html` and `style.css` are the page; `public/js/` is the Three.js client as plain ES modules (no build step):
