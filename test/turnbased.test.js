@@ -284,3 +284,19 @@ test('turn-based: a timed round ends right at the deadline, without waiting for 
   assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
   assert.strictEqual(room.turnEnds, null, 'no turn running after the round ended');
 });
+
+test('turn-based: a throw refused at the deadline still tells everyone the round is over', () => {
+  const { host, room } = lobby(2);
+  act('setWin', host.code, host.token, { type: 'time', minutes: 3 });
+  act('start', host.code, host.token);
+  const [a, b] = room.players;
+  a.score = 1; b.score = 3;
+  room.cur = 0; room.busyUntil = 0;
+  room.endsAt = Date.now() - 1; // expired, but the deadline timer hasn't fired yet
+  const sent = [];
+  b.clients.add({ write: (s) => sent.push(s) });
+  assert.throws(() => act('throw', host.code, a.token, { yaw: 0, pitch: 0.3, power: 0.3 }), /Time's up/);
+  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.ok(sent.some((s) => s.includes('"over":{"winner":' + JSON.stringify(b.id))), 'the result went out to the other player');
+  b.clients.clear(); clearTimeout(room.endTimer); clearTimeout(room.clock);
+});

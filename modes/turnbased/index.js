@@ -20,7 +20,9 @@ function clearTimers(room) {
 
 // A timed round ends on the scores when the clock runs out: one leader wins; a tie is sudden death (the next throw
 // that leaves one player leading alone wins). Called by a timer at the deadline and before any throw or pack, so
-// nothing done after time is up can change the result. Returns true if the round is over.
+// nothing done after time is up can change the result. Returns true if the round is over. Any change it makes is
+// broadcast right here: the request that noticed the deadline may be refused ("Time's up!"), and a refused request
+// doesn't broadcast, so without this everyone would be left on the game screen.
 export function resolveClock(room) {
   if (room.over) return true;
   if (!room.endsAt || room.suddenDeath || Date.now() < room.endsAt) return false;
@@ -28,9 +30,10 @@ export function resolveClock(room) {
   if (result && result.winner) {
     room.over = { winner: result.winner.id, reason: 'time' };
     clearTimers(room); clearTimeout(room.endTimer); room.turnEnds = null;
+    broadcast(room);
     return true;
   }
-  if (result && result.suddenDeath) room.suddenDeath = true;
+  if (result && result.suddenDeath) { room.suddenDeath = true; broadcast(room); }
   return false;
 }
 
@@ -39,9 +42,7 @@ function scheduleEnd(room) {
   clearTimeout(room.endTimer); room.endTimer = null;
   if (!room.endsAt) return;
   room.endTimer = later(Math.max(0, room.endsAt - Date.now()) + 10, `Round clock in room ${room.code}`, () => {
-    if (!room.started || room.over) return;
-    const wasSudden = room.suddenDeath;
-    if (resolveClock(room) || room.suddenDeath !== wasSudden) broadcast(room);
+    if (room.started && !room.over) resolveClock(room); // broadcasts what it decides
   });
 }
 
