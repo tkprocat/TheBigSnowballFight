@@ -12,7 +12,7 @@ import { canvas, orbitCamera, updateParticles, render } from './scene.js';
 import { clearPlayers, setMap, followNext } from './players.js';
 import { initChat, onSay, toggleChat } from './chat.js';
 import { showLobby, initLobby } from './lobby.js';
-import { hideOver } from './over.js';
+import { hideOver, refreshOver } from './over.js';
 import turn from '../turnbased/game.js';
 import realtime from '../realtime/game.js';
 import { R } from '../realtime/state.js';
@@ -96,6 +96,7 @@ function onView(v) {
     active.enter(v);
   }
   active.onView(v);
+  refreshOver(); // hosting may have changed while the round-over popup is up
 }
 
 function exitGame() {

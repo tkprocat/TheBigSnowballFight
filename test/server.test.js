@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 process.env.BOT_DELAY_MS = '0';
 const { actions, rooms, findMember, viewFor } = await import('../server.js');
+const { members } = await import('../rooms.js');
 const { MAX_PLAYERS } = await import('../public/shared/physics.js');
 
 const act = (name, code, token, body = {}) => {
@@ -142,4 +143,64 @@ test('the host picks how to win in the lobby: first to N points or a time limit'
   assert.ok(v.timeLeft > 170000 && v.timeLeft <= 180000, 'the clock is running');
   assert.throws(() => act('setWin', host.code, host.token, { type: 'points', points: 5 }), /before the game starts/);
   stop(room);
+});
+
+// ---------- over HTTP ----------
+const { server, OFFLINE } = await import('../server.js');
+const http = await import('node:http');
+async function listening() {
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return server.address().port;
+}
+const get = (port, p) => new Promise((resolve, reject) => {
+  http.get({ host: '127.0.0.1', port, path: p }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); }).on('error', reject);
+});
+// An open event stream for this member; call the result to close it (the page going away).
+const openStream = (port, code, token) => new Promise((resolve, reject) => {
+  const req = http.get({ host: '127.0.0.1', port, path: `/events?code=${code}&token=${encodeURIComponent(token)}` }, (res) => {
+    res.resume(); resolve(() => req.destroy());
+  });
+  req.on('error', reject);
+});
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn, ms = 1000) => { const end = Date.now() + ms; while (!fn() && Date.now() < end) await wait(5); return fn(); };
+
+test('a malformed URL gets 400 and the server keeps running', async () => {
+  const port = await listening();
+  try {
+    assert.strictEqual(await get(port, '/%ZZ'), 400);
+    assert.strictEqual(await get(port, '/js/%E0%A4%A'), 400);
+    assert.strictEqual(await get(port, '/api/hello'), 200);
+  } finally { await new Promise((r) => server.close(r)); }
+});
+
+test('a host whose page closes hands over hosting, and the seat is freed later; coming back in time keeps both', async () => {
+  const saved = { ...OFFLINE };
+  OFFLINE.host = 40; OFFLINE.seat = 120;
+  const port = await listening();
+  try {
+    const { host, others, room } = lobby(2);
+    const [hostM, guestM] = room.players;
+    const closeHost = await openStream(port, host.code, host.token);
+    await openStream(port, host.code, others[0].token);
+    // back within the grace time: nothing changes
+    closeHost();
+    await until(() => hostM.clients.size === 0);
+    await wait(10);
+    const reopen = await openStream(port, host.code, host.token);
+    await wait(OFFLINE.seat + 30);
+    assert.strictEqual(room.host, hostM, 'came back in time: still host');
+    assert.ok(room.players.includes(hostM), 'came back in time: still seated');
+    // gone for good: hosting moves to the guest who is online, then the seat goes
+    reopen();
+    assert.ok(await until(() => room.host === guestM), 'the online guest is host now');
+    assert.ok(room.players.includes(hostM), 'the seat waits a little longer');
+    assert.ok(await until(() => !room.players.includes(hostM)), 'then the seat is freed');
+    assert.deepStrictEqual(room.players, [guestM]);
+  } finally {
+    Object.assign(OFFLINE, saved);
+    for (const r of rooms.values()) for (const m of members(r)) for (const res of m.clients) res.end();
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+  }
 });

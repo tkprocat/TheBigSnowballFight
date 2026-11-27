@@ -9,11 +9,18 @@ export function showOver(winner, reason) {
   if (S.over) return;
   S.over = true; sfx.win();
   $('#overTitle').textContent = (reason === 'time' ? "Time's up! " : '') + winner.name + ' wins!';
-  $('#overSub').textContent = [...S.players].sort((a, b) => b.score - a.score).map((p) => p.name + ' ' + p.score).join(' · ');
+  overScores = [...S.players].sort((a, b) => b.score - a.score).map((p) => p.name + ' ' + p.score).join(' · ');
+  refreshOver();
+  $('#over').hidden = false;
+}
+
+let overScores = '';
+// Only the host can start the next round; call again when hosting may have changed while the popup is up.
+export function refreshOver() {
+  if (!S.over) return;
   const canAgain = !!(NET.view && NET.view.host === NET.id);
   $('#againBtn').hidden = !canAgain;
-  if (!canAgain) $('#overSub').textContent += ' · Waiting for the host to start the next round';
-  $('#over').hidden = false;
+  $('#overSub').textContent = overScores + (canAgain ? '' : ' · Waiting for the host to start the next round');
 }
 
 // A new round: hide the popup and any message left over from the last round.
