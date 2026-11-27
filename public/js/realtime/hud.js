@@ -1,5 +1,6 @@
 // Realtime HUD: scores (leader first), your snowballs, your angle, and hints.
-import { CARRY_MAX } from '../../shared/realtimeRules.js';
+import { CARRY_MAX, PICKUP_R } from '../../shared/realtimeRules.js';
+import { THREE, camera } from '../common/scene.js';
 import { S } from '../common/state.js';
 import { $, toast } from '../common/dom.js';
 import { NET } from '../common/net.js';
@@ -19,11 +20,38 @@ export function renderHUD(force = false) {
   lastKey = key;
   renderScores({ sorted: true, cur: p, follow: S.watching ? followed() : null, limit: innerWidth < 520 ? 4 : 8, keep: [p, S.watching ? followed() : null] });
   const box = $('#ammo'); box.textContent = '';
-  box.hidden = !p;
   if (p) {
     for (let i = 0; i < CARRY_MAX; i++) { const b = document.createElement('i'); if (i >= p.ammo) b.className = 'empty'; box.appendChild(b); }
     box.setAttribute('aria-label', p.ammo + ' of ' + CARRY_MAX + ' snowballs');
   }
+}
+
+// Every frame: your snowballs float above your head (placeAmmo hides them when you're off screen or not playing).
+// Walking onto a pile while you already carry CARRY_MAX flashes them gold, once per pile, so you know why nothing
+// was picked up.
+const head = new THREE.Vector3();
+let onPile = null, flashOff = 0;
+export function placeAmmo() {
+  const box = $('#ammo'), p = me();
+  let show = !!p && p.avatar && S.screen === 'game';
+  if (show) {
+    const a = p.avatar.position;
+    head.set(a.x, a.y + 2.3, a.z).project(camera);
+    show = head.z < 1 && Math.abs(head.x) < 1 && Math.abs(head.y) < 1;
+    if (show) {
+      box.style.left = ((head.x + 1) / 2 * innerWidth).toFixed(1) + 'px';
+      box.style.top = ((1 - head.y) / 2 * innerHeight).toFixed(1) + 'px';
+    }
+    // the pile you're standing on (the client's own position, so the flash comes right away)
+    let pile = null;
+    for (const [id, b] of R.loose) if (Math.hypot(b.x - a.x, b.z - a.z) < PICKUP_R) { pile = id; break; }
+    if (pile !== null && pile !== onPile && p.ammo >= CARRY_MAX) {
+      box.classList.remove('full'); void box.offsetWidth; box.classList.add('full'); // restart the flash
+      clearTimeout(flashOff); flashOff = setTimeout(() => box.classList.remove('full'), 700);
+    }
+    onPile = pile;
+  }
+  if (box.hidden === show) box.hidden = !show;
 }
 
 // Every frame: banner, meter and hints.

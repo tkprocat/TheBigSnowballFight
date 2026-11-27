@@ -15,7 +15,7 @@ import { addFeed, clearFeed } from '../common/feed.js';
 import { R, resetR, me, canPlay } from './state.js';
 import { applySnapshot, interpolate, sendInput } from './net.js';
 import { initInput, runDir, wantSprint, unlock, requestLock } from './input.js';
-import { renderHUD, updateReadout } from './hud.js';
+import { renderHUD, placeAmmo, updateReadout } from './hud.js';
 
 /* ---------- throwing ---------- */
 // Every throw goes at the same speed: you only aim (direction and angle). Click, Space or the button throws.
@@ -253,6 +253,7 @@ export default {
     updateParticles(dt, null);
     updateCamera(dt);
     updateTags(me(), (p) => p.name + ' · ' + p.score);
+    placeAmmo();
     updateReadout();
   },
   exit() {
