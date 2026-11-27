@@ -70,11 +70,22 @@ export function openStats(dir = process.env.STATS_DIR) {
   file = path.join(dir, 'stats.jsonl');
   try {
     fs.mkdirSync(dir, { recursive: true });
-    if (fs.existsSync(file))
-      for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    if (fs.existsSync(file)) {
+      const buf = fs.readFileSync(file);
+      for (const line of buf.toString('utf8').split('\n')) {
         if (!line) continue;
         try { apply(JSON.parse(line)); } catch { /* a half-written last line: skip it */ }
       }
+      // The file must end with a newline before we append, or the next event would be glued onto the last line.
+      // A complete last line just gets its newline; a half-written one is cut off.
+      if (buf.length && buf[buf.length - 1] !== 0x0a) {
+        const start = buf.lastIndexOf(0x0a) + 1;
+        let whole = false;
+        try { JSON.parse(buf.subarray(start).toString('utf8')); whole = true; } catch {}
+        if (whole) fs.appendFileSync(file, '\n');
+        else fs.truncateSync(file, start);
+      }
+    }
     stream = fs.createWriteStream(file, { flags: 'a' });
     stream.on('error', (e) => { console.error('Stats file:', e.message); stream = null; });
   } catch (e) {

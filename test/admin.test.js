@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 process.env.BOT_DELAY_MS = '0';
 const { actions, rooms, findMember, server } = await import('../server.js');
-const { resetStats, statsSummary, openStats, closeStats } = await import('../stats.js');
+const { resetStats, statsSummary, openStats, closeStats, lobbyCreated } = await import('../stats.js');
 const { tokenOk, liveSummary } = await import('../admin.js');
 
 const act = (name, code, token, body = {}) => {
@@ -84,6 +84,25 @@ test('statistics are appended to STATS_DIR/stats.jsonl and read back after a res
     assert.strictEqual(s.lobbies, 1);
     assert.strictEqual(s.finished, 1);
     assert.ok(s.persisted);
+    // the torn line is cut off, so the next event is a line of its own and survives another restart
+    lobbyCreated();
+    closeStats();
+    return new Promise((resolve) => setTimeout(resolve, 50));
+  }).then(() => {
+    assert.ok(!fs.readFileSync(file, 'utf8').includes('"e":"lob"'), 'the torn line is gone');
+    resetStats();
+    openStats(dir);
+    assert.strictEqual(statsSummary().lobbies, 2, 'the event written after the torn line is read back');
+    closeStats();
+    // a complete last line that only lost its newline is kept, and gets its newline
+    fs.appendFileSync(file, '{"t":"2026-01-02T00:00:00.000Z","e":"lobby"}');
+    resetStats();
+    openStats(dir);
+    closeStats();
+    assert.ok(fs.readFileSync(file, 'utf8').endsWith('"e":"lobby"}\n'));
+    resetStats();
+    openStats(dir);
+    assert.strictEqual(statsSummary().lobbies, 3);
     closeStats();
     fs.rmSync(dir, { recursive: true, force: true });
   });

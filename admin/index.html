@@ -30,7 +30,7 @@
   h1 { font-size: 20px; margin: 0; }
   h2 { font-size: 15px; margin: 0 0 10px; }
   .muted { color: var(--muted); }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
   .tile .v { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -119,7 +119,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const MODE = { turn: 'Turn-based', realtime: 'Realtime' };
-let token = null, timer = null;
+let token = null, timer = null, session = 0; // `session` goes up on logout, so a poll still on its way is ignored
 try { token = sessionStorage.getItem('adminToken'); } catch {}
 
 function dur(ms) {
@@ -212,20 +212,23 @@ function render(d) {
 }
 
 async function load() {
+  const mine = session;
   try {
     const r = await fetch('/api/admin', { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' });
     const d = await r.json().catch(() => ({}));
+    if (mine !== session) return; // logged out while this was on its way
     if (!r.ok) throw Object.assign(new Error(d.error || 'Error ' + r.status), { status: r.status });
     $('login').hidden = true; $('dash').hidden = false; $('err').textContent = '';
     render(d);
   } catch (e) {
+    if (mine !== session) return;
     if (e.status === 401 || e.status === 429) { logout(); $('err').textContent = e.message; }
     else $('status').textContent = 'Can\'t reach the server (' + e.message + '), retrying…';
   }
 }
 function start() { clearInterval(timer); load(); timer = setInterval(load, 5000); }
 function logout() {
-  clearInterval(timer); token = null;
+  clearInterval(timer); token = null; session++;
   try { sessionStorage.removeItem('adminToken'); } catch {}
   $('dash').hidden = true; $('login').hidden = false; $('status').textContent = '';
 }
