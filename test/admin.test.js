@@ -126,6 +126,22 @@ test('statistics are appended to STATS_DIR/stats.jsonl and read back after a res
   });
 });
 
+test("a rematch doesn't see the last round's deadline, and every start gets one end", () => {
+  resetStats();
+  const { host, friend, room } = playTimedRound();
+  // down to one seat: the friend leaves and the bot goes
+  act('leave', host.code, friend.token);
+  act('removeBot', host.code, host.token, { id: room.players.find((p) => p.cpu).id });
+  act('again', host.code, host.token);
+  assert.strictEqual(room.over, null, 'the rematch is not over before it starts');
+  assert.ok(room.endsAt > Date.now(), 'it has its own deadline');
+  stop(room);
+  act('leave', host.code, host.token);
+  const s = statsSummary();
+  assert.strictEqual(s.started, 2);
+  assert.strictEqual(s.finished + s.abandoned, 2, 'no start left without an end');
+});
+
 test('the live summary counts rooms, people, bots and spectators', () => {
   for (const r of rooms.values()) stop(r);
   rooms.clear();

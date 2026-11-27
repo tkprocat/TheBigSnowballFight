@@ -106,8 +106,10 @@ function startClock(room) {
   if (MODES[room.mode].clockStarted) MODES[room.mode].clockStarted(room);
 }
 
-// Fresh scores and spots for a new round.
+// Fresh scores and spots for a new round, and no clock yet: the last round's deadline has passed, and the mode
+// must not see it when it starts the round (startClock sets the new one).
 function resetRound(room) {
+  room.endsAt = null; room.suddenDeath = false;
   for (const p of room.players) { p.placed = false; p.score = 0; }
   for (const p of room.players) place(room, p);
 }
@@ -213,9 +215,9 @@ const lobbyActions = {
     room.map = makeMap(room.seed, room.mapSize);
     room.over = null;
     resetRound(room);
+    roundStarted(room); // before the mode runs: anything that ends the round from here on is matched to this start
     MODES[room.mode].start(room);
     startClock(room);
-    roundStarted(room);
   },
 
   again(_body, room, member) {
@@ -223,9 +225,9 @@ const lobbyActions = {
     if (!room.over) throw new Error('The round is still going');
     room.over = null; room.round += 1;
     resetRound(room);
+    roundStarted(room, true);
     MODES[room.mode].again(room);
     startClock(room);
-    roundStarted(room, true);
   },
 
   // Quick chat: one of the fixed lines or emotes. Works in the lobby and in the game, for spectators too.
