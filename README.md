@@ -13,7 +13,7 @@ Quick chat (fixed lines and emotes: wave, dance, cheer) works in the lobby and i
 npm start
 ```
 
-Then open http://localhost:3000. Node 18 or newer, no dependencies, no build step. Set `PORT` to change the port. To play with friends over the internet, deploy to any Node host or run the Docker image below.
+Then open http://localhost:3000. Node 22 or newer (the oldest Node LTS still supported), no dependencies, no build step. Set `PORT` to change the port. To play with friends over the internet, deploy to any Node host or run the Docker image below.
 
 ## Docker
 
@@ -88,4 +88,4 @@ Every realtime throw goes at the same speed, so there is no power meter: the ang
 npm test
 ```
 
-CI runs the tests on Node 18 and 24 and builds the Docker image for every pull request.
+CI runs the tests on Node 22 and 26 (the oldest and newest supported LTS) and builds the Docker image for every pull request.

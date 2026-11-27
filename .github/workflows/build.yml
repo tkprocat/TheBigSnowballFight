@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [18, 24] # the oldest version package.json allows, and the current LTS
+        node: [22, 26] # the oldest supported Node LTS (what package.json allows), and the newest LTS
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
