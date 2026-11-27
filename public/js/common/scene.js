@@ -126,6 +126,8 @@ function buildMapMeshes(map, piles = true) {
   scene.fog.near = size + 10; scene.fog.far = size * 2 + 60;
   const ballGeo = new THREE.SphereGeometry(0.22, 10, 8);
   const crenelGeo = new THREE.BoxGeometry(0.42, 0.34, 0.5);
+  // the old map's own (cloned) materials go before the lists are refilled with the new map's
+  for (const t of [...fadeTrees, ...fadeWalls]) for (const m of t.g.userData.mats) m.dispose();
   fadeWalls = [];
   for (const w of map.walls) {
     const g = new THREE.Group();
@@ -162,7 +164,6 @@ function buildMapMeshes(map, piles = true) {
     }
   }
   for (const m of map.snowmen || []) { const sm = makeSnowman(m.s); sm.position.set(m.x, 0, m.z); sm.rotation.y = m.ry || 0; mapGroup.add(sm); }
-  for (const t of [...fadeTrees, ...fadeWalls]) for (const m of t.g.userData.mats) m.dispose();
   fadeTrees = [];
   for (const t of map.trees) {
     const tr = makeTree(t.s, true); tr.position.set(t.x, 0, t.z); mapGroup.add(tr);
@@ -295,8 +296,10 @@ export function makeBallMesh(scale = 1) {
 export function removeMesh(m) { scene.remove(m); }
 
 // Trees standing between the camera and what it looks at (the player, or a snowball in flight) fade out,
-// and come back once they're out of the way.
-export function fadeBlockingTrees(target, dt) {
+// and come back once they're out of the way. Tall walls fade when they block the line to `target` or to any of
+// `more` (realtime passes the avatar too: a wall right behind you can hide you while the line to a point ahead
+// passes over it).
+export function fadeBlockingTrees(target, dt, more = []) {
   const c = camera.position, dx = target.x - c.x, dz = target.z - c.z, len2 = dx * dx + dz * dz || 1;
   for (const t of fadeTrees) {
     // closest point on the camera-to-target line (seen from above), and how far the tree is from it
@@ -309,9 +312,12 @@ export function fadeBlockingTrees(target, dt) {
   for (const f of fadeWalls) {
     const w = f.w, cs = Math.cos(-w.ry), sn = Math.sin(-w.ry), hw = w.w / 2 + 0.3, hd = w.d / 2 + 0.3;
     let blocks = false;
-    for (let k = 1; k < 24 && !blocks; k++) {
-      const t = k / 24, x = c.x + dx * t - w.x, z = c.z + dz * t - w.z, y = c.y + (1.2 - c.y) * t;
-      blocks = Math.abs(x * cs - z * sn) < hw && Math.abs(x * sn + z * cs) < hd && y < w.h + 0.3;
+    for (const to of [target, ...more]) {
+      const ex = to.x - c.x, ez = to.z - c.z;
+      for (let k = 1; k < 24 && !blocks; k++) {
+        const t = k / 24, x = c.x + ex * t - w.x, z = c.z + ez * t - w.z, y = c.y + (1.2 - c.y) * t;
+        blocks = Math.abs(x * cs - z * sn) < hw && Math.abs(x * sn + z * cs) < hd && y < w.h + 0.3;
+      }
     }
     fadeTo(f, blocks ? 0.18 : 1, dt);
   }

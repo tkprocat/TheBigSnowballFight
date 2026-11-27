@@ -83,10 +83,11 @@ function addCastle(walls, rot) {
   put(8.5, 0, 2.6, 0.7, WALL_LOW, Math.PI / 2); put(-8.5, 0, 2.6, 0.7, WALL_LOW, Math.PI / 2); // facing the keep's gates
 }
 
-// An outpost round (x, z), facing the middle, in one of four shapes.
+// An outpost round (x, z) in one of four shapes. Each shape opens towards its local -z, so `rot` must turn local
+// -z towards the middle (makeLargeMap does).
 function addOutpost(walls, snowmen, kind, x, z, rot, rng) {
   const put = placer(walls, x, z, rot);
-  if (kind === 'fort') addFort(walls, x, z, 4.5, rot, [1, 3]);
+  if (kind === 'fort') addFort(walls, x, z, 4.5, rot, [0, 2]); // gates front and back
   else if (kind === 'bunker') { // an L of tall walls with a low wall in front
     put(0, 2.6, 6, 0.8, WALL_TALL, 0); put(3.4, -0.2, 5, 0.8, WALL_TALL, Math.PI / 2); put(-1.2, -2.4, 3, 0.7, WALL_LOW, 0);
   } else if (kind === 'trench') { // a U of medium walls, open towards the middle
@@ -114,9 +115,10 @@ function makeLargeMap(seed) {
   for (let i = shapes.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [shapes[i], shapes[j]] = [shapes[j], shapes[i]]; }
   const a0 = rng() * TAU;
   for (let k = 0; k < 3; k++) {
-    const a = a0 + k * TAU / 3, x = Math.cos(a) * 38, z = Math.sin(a) * 38;
-    forts.push({ x, z, half: 4.5, rot: -a, kind: shapes[k] });
-    addOutpost(walls, snowmen, shapes[k], x, z, -a, rng);
+    // rot = a - 90°: placer maps local -z to (sin rot, -cos rot) = (-cos a, -sin a), the way to the middle
+    const a = a0 + k * TAU / 3, x = Math.cos(a) * 38, z = Math.sin(a) * 38, rot = a - Math.PI / 2;
+    forts.push({ x, z, half: 4.5, rot, kind: shapes[k] });
+    addOutpost(walls, snowmen, shapes[k], x, z, rot, rng);
   }
   const nearFort = (x, z, pad) => forts.some((f) => Math.hypot(f.x - x, f.z - z) < f.half * 1.45 + pad);
   const pieces = snowmen.length; // ring outposts already placed some snowmen

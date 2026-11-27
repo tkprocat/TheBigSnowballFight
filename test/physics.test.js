@@ -347,3 +347,20 @@ test('walls come in three heights; only tall ones hide you completely, and the c
   const route = nav.findPath(nav.buildNav(m), outerGate, { x: 0, z: 0 });
   assert.ok(route && route.dist > f.half + 3, 'you walk round to the keep\'s gate');
 });
+
+test('realtime outposts open towards the middle of the map', () => {
+  for (let seed = 1; seed <= 60; seed++) {
+    const m = makeMap(seed, 'large');
+    for (const f of m.forts.slice(1)) {
+      // the shapes open towards their local -z; that must point at the middle
+      const ox = Math.sin(f.rot), oz = -Math.cos(f.rot), d = Math.hypot(f.x, f.z);
+      assert.ok((ox * -f.x + oz * -f.z) / d > 0.999, `seed ${seed}: ${f.kind} faces the middle`);
+      if (f.kind === 'trench') {
+        // the back of the U is the wall farthest from the middle
+        const near = m.walls.filter((w) => Math.hypot(w.x - f.x, w.z - f.z) < 5);
+        const back = near.reduce((a, b) => (Math.hypot(b.x, b.z) > Math.hypot(a.x, a.z) ? b : a));
+        assert.strictEqual(back.w, 7.2, `seed ${seed}: the trench's back wall is on the far side`);
+      }
+    }
+  }
+});

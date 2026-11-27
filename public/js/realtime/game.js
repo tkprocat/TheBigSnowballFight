@@ -222,9 +222,10 @@ function updateCamera(dt) {
   want.set(ax - fx * 6 + rx, 3.7 - tilt * 0.3, az - fz * 6 + rz);
   look.set(ax + fx * 12 + rx, 1.2 + tilt, az + fz * 12 + rz);
   easeCamera(want, look, p.local ? 14 : 6, dt);
-  // trees between the camera and a point a little ahead of you fade, so they don't hide you or your aim
+  // trees between the camera and a point a little ahead of you fade, so they don't hide you or your aim; tall
+  // walls also fade when they hide you yourself
   ahead.set(ax + fx * 7, 0, az + fz * 7);
-  fadeBlockingTrees(ahead, dt);
+  fadeBlockingTrees(ahead, dt, [p.avatar.position]);
   const s = 1 + Math.sin(performance.now() / 250) * 0.08;
   ring.visible = !!p.local; ring.position.set(ax, 0.04, az); ring.scale.set(s, s, s);
 }
