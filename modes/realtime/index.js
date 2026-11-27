@@ -4,6 +4,7 @@
 // where they are (checked for speed and walls) and ask to throw; they only draw what the server sends back.
 import { TAU, PITCH_MIN, PITCH_MAX, HIT_POINTS, clamp } from '../../public/shared/physics.js';
 import { checkWinner } from '../../public/shared/win.js';
+import { roundEnded } from '../../stats.js';
 import {
   RUN_SPEED, SPRINT_SPEED, TICK_MS, SEND_MS, CARRY_MAX, PICKUP_R, BALL_RESPAWN_MS, THROW_COOLDOWN_MS, THROW_POWER, SHIELD_MS, START_COUNTDOWN_MS,
   pilesOnMap, pileSize, pathClear, ballSpot, newBall, stepBall,
@@ -124,6 +125,7 @@ export function tick(room, now) {
   if (result && result.suddenDeath && !room.suddenDeath) { room.suddenDeath = true; broadcast(room); }
   if (result && result.winner) {
     room.over = { winner: result.winner.id, name: result.winner.name, reason: result.reason };
+    roundEnded(room);
     stopTick(room);
     sendState(room, now);
     broadcast(room);

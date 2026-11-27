@@ -7,6 +7,7 @@ import {
 import { rand, place, broadcast, broadcastEvent, broadcastSay, later } from '../../rooms.js';
 import { botTurn } from './bots.js';
 import { checkWinner } from '../../public/shared/win.js';
+import { roundEnded } from '../../stats.js';
 
 const BOT_DELAY = Number(process.env.BOT_DELAY_MS ?? 1500); // pause before a bot throws, so people can follow along
 
@@ -29,6 +30,7 @@ export function resolveClock(room) {
   const result = checkWinner(room.players, room.win, room.endsAt, Date.now());
   if (result && result.winner) {
     room.over = { winner: result.winner.id, name: result.winner.name, reason: 'time' };
+    roundEnded(room);
     clearTimers(room); clearTimeout(room.endTimer); room.turnEnds = null;
     broadcast(room);
     return true;
@@ -92,6 +94,7 @@ function doThrow(room, p, yaw, pitch, power) {
     : checkWinner(room.players, room.win, room.endsAt, Date.now());
   if (result && result.winner) {
     room.over = { winner: result.winner.id, name: result.winner.name, reason: result.reason };
+    roundEnded(room);
     clearTimeout(room.endTimer);
     clearTimers(room); room.turnEnds = null;
     return;
