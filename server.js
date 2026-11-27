@@ -14,7 +14,7 @@ import { DEFAULT_WIN, cleanWin } from './public/shared/win.js';
 import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay, broadcastEvent } from './rooms.js';
 import turnbased from './modes/turnbased/index.js';
 import realtime from './modes/realtime/index.js';
-import { openStats, lobbyCreated, roundStarted, roundEnded } from './stats.js';
+import { openStats, lobbyCreated, roundStarted, roundEnded, roundJoined } from './stats.js';
 import { handleAdmin } from './admin.js';
 
 export { rooms, viewFor };
@@ -136,7 +136,7 @@ const lobbyActions = {
     if (full) room.spectators.push(member);
     else {
       room.players.push(member);
-      if (room.started) MODES[room.mode].join(room, member);
+      if (room.started) { MODES[room.mode].join(room, member); roundJoined(room, member); }
     }
     room.lastActive = Date.now();
     if (room.host) broadcastEvent(room, 'notice', { joined: member.name, watching: full });

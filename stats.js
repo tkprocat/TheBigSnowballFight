@@ -7,6 +7,8 @@
 //   {"t":…,"e":"start","mode":"turn","humans":2,"bots":1,"spectators":0,"win":"points","rematch":false}
 //   {"t":…,"e":"end","mode":"turn","humans":2,"bots":1,"ms":184000,"how":"points","winner":"human"}
 // `how` is "points", "time" or "abandoned" (everyone left, or the room was forgotten mid-game; winner is null).
+// "restart":true marks a game the server stopped in the middle of; it is written at the next start and only counted.
+// humans/bots on an "end" are everyone who had a seat at some point in the round.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -53,6 +55,7 @@ function apply(ev) {
       m.ms += num(ev.ms); m.humans += num(ev.humans); m.bots += num(ev.bots);
       if (ev.winner === 'bot') totals.botWins++;
     }
+    if (ev.restart) return; // a game cut off by a restart: counted, but we know nothing else about it
     totals.recent.unshift({ t: ev.t, mode: ev.mode, humans: num(ev.humans), bots: num(ev.bots), ms: num(ev.ms), how: ev.how, winner: ev.winner ?? null });
     if (totals.recent.length > RECENT) totals.recent.length = RECENT;
   }
@@ -88,6 +91,10 @@ export function openStats(dir = process.env.STATS_DIR) {
     }
     stream = fs.createWriteStream(file, { flags: 'a' });
     stream.on('error', (e) => { console.error('Stats file:', e.message); stream = null; });
+    // Rooms live in memory, so a game still running when the server stopped never got its end. Nothing can be
+    // running now, so every start without an end was abandoned: write that down (once, it's in the file after).
+    for (const [mode, m] of Object.entries(totals.modes))
+      for (let n = m.started - m.finished - m.abandoned; n > 0; n--) record({ e: 'end', mode, how: 'abandoned', restart: true });
   } catch (e) {
     console.error(`Stats: can't use ${file} (${e.message}); keeping them in memory only`);
     stream = null;
@@ -102,11 +109,23 @@ const count = (room) => {
   return { humans, bots: room.players.length - humans };
 };
 
+// Everyone who had a seat at some point in the round, id -> is a bot. People who leave before the end still count.
+function seatTaken(room, p) { if (room.roundSeats) room.roundSeats.set(p.id, !!p.cpu); }
+// Someone sat down in a round already going.
+export function roundJoined(room, p) { seatTaken(room, p); }
+function roundCount(room) {
+  for (const p of room.players) seatTaken(room, p);
+  if (!room.roundSeats) return count(room);
+  const bots = [...room.roundSeats.values()].filter(Boolean).length;
+  return { humans: room.roundSeats.size - bots, bots };
+}
+
 export function lobbyCreated() { record({ e: 'lobby' }); }
 
 // A round starts: the first game in a lobby, or a rematch.
 export function roundStarted(room, rematch = false) {
   room.roundStartedAt = Date.now();
+  room.roundSeats = new Map(room.players.map((p) => [p.id, !!p.cpu]));
   record({ e: 'start', mode: room.mode, ...count(room), spectators: room.spectators.length, win: room.win?.type || 'points', rematch });
 }
 
@@ -115,11 +134,11 @@ export function roundEnded(room, abandoned = false) {
   if (!room.roundStartedAt) return;
   const winner = abandoned ? null : room.players.find((p) => room.over && p.id === room.over.winner);
   record({
-    e: 'end', mode: room.mode, ...count(room), ms: Date.now() - room.roundStartedAt,
+    e: 'end', mode: room.mode, ...roundCount(room), ms: Date.now() - room.roundStartedAt,
     how: abandoned ? 'abandoned' : room.over?.reason || 'points',
     winner: winner ? (winner.cpu ? 'bot' : 'human') : null,
   });
-  room.roundStartedAt = null;
+  room.roundStartedAt = null; room.roundSeats = null;
 }
 
 // What the dashboard shows: totals, per mode averages, the last DAYS days and the latest games.

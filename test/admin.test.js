@@ -62,6 +62,8 @@ test('statistics count lobbies, started and finished games, people and bots, wit
   assert.strictEqual(s.abandoned, 1);
   assert.strictEqual(s.finished, 1);
   assert.strictEqual(s.recent[0].how, 'abandoned');
+  assert.strictEqual(s.recent[0].humans, 2, 'the people who played, though they have all left');
+  assert.strictEqual(s.recent[0].bots, 1);
 
   const text = JSON.stringify(s);
   assert.ok(!text.includes('Secret') && !text.includes('Other') && !text.includes(host.code), 'no names or codes');
@@ -103,6 +105,22 @@ test('statistics are appended to STATS_DIR/stats.jsonl and read back after a res
     resetStats();
     openStats(dir);
     assert.strictEqual(statsSummary().lobbies, 3);
+    closeStats();
+    // a game still running when the server stopped is counted as abandoned at the next start, once
+    fs.appendFileSync(file, '{"t":"2026-01-03T00:00:00.000Z","e":"start","mode":"realtime","humans":3,"bots":0}\n');
+    resetStats();
+    openStats(dir);
+    const s2 = statsSummary();
+    assert.strictEqual(s2.started, 2);
+    assert.strictEqual(s2.abandoned, 1);
+    assert.strictEqual(s2.modes.realtime.abandoned, 1);
+    assert.strictEqual(s2.recent[0].how, 'time', 'not listed among the latest games: nothing is known about it');
+    closeStats();
+  }).then(() => new Promise((resolve) => setTimeout(resolve, 50))).then(() => {
+    assert.ok(fs.readFileSync(file, 'utf8').includes('"restart":true'), 'written to the file');
+    resetStats();
+    openStats(dir);
+    assert.strictEqual(statsSummary().abandoned, 1, 'not counted again on the next start');
     closeStats();
     fs.rmSync(dir, { recursive: true, force: true });
   });
