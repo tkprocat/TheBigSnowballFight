@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CHAT_LINES, EMOTES, MAX_PLAYERS, COLORS, BOT_NAMES, BOT_LEVELS, makeMap } from './public/shared/physics.js';
 import { DEFAULT_WIN, cleanWin } from './public/shared/win.js';
-import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay, broadcastEvent } from './rooms.js';
+import { rooms, MODES, members, humans, place, viewFor, broadcast, broadcastSay, broadcastEvent, later } from './rooms.js';
 import turnbased from './modes/turnbased/index.js';
 import realtime from './modes/realtime/index.js';
 import { openStats, lobbyCreated, roundStarted, roundEnded, roundJoined } from './stats.js';
@@ -24,6 +24,9 @@ MODES.realtime = realtime;
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const ROOM_TTL = 6 * 3600e3; // forget rooms nobody has touched for this long
+// Someone whose page has closed (no event stream left): after `host` ms a host hands over to someone online, and
+// after `seat` ms the seat is freed. Opening the page again within that time keeps everything. Tests shorten these.
+export const OFFLINE = { host: 20e3, seat: 120e3 };
 
 function newCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -66,6 +69,7 @@ function newMember(fields) {
 }
 
 function removeMember(room, p) {
+  clearOffline(p);
   for (const res of p.clients) res.end();
   const si = room.spectators.indexOf(p);
   if (si >= 0) room.spectators.splice(si, 1);
@@ -84,6 +88,37 @@ function uniqueName(room, name) {
   const taken = new Set(members(room).map((m) => m.name));
   if (!taken.has(name)) return name;
   for (let k = 2; ; k++) { const n = Array.from(name).slice(0, 11).join('') + ' ' + k; if (!taken.has(n)) return n; }
+}
+
+// Hosting goes to the first person who has the room open, if anyone.
+function handOverHost(room, from) {
+  const next = humans(room).find((m) => m !== from && m.clients.size > 0);
+  if (!next) return;
+  room.host = next;
+  broadcastEvent(room, 'notice', { host: next.id, hostName: next.name });
+  broadcast(room);
+}
+
+function clearOffline(p) { clearTimeout(p.offlineHost); clearTimeout(p.offlineSeat); p.offlineHost = p.offlineSeat = null; p.offlineSince = null; }
+
+// Someone opened the room: if the host has been gone longer than the handover time (and nobody online could take
+// over then), hosting goes to someone online now.
+function checkOverdueHost(room) {
+  const h = room.host;
+  if (h && h.clients.size === 0 && h.offlineSince != null && Date.now() - h.offlineSince >= OFFLINE.host) handOverHost(room, h);
+}
+
+// The last event stream of `p` closed: start the clocks for handing over hosting and freeing the seat.
+function wentOffline(room, p) {
+  clearOffline(p);
+  p.offlineSince = Date.now();
+  const still = () => rooms.get(room.code) === room && members(room).includes(p) && p.clients.size === 0;
+  p.offlineHost = later(OFFLINE.host, `Host handover in room ${room.code}`, () => { if (still() && room.host === p) handOverHost(room, p); });
+  p.offlineSeat = later(OFFLINE.seat, `Freeing a seat in room ${room.code}`, () => {
+    if (!still()) return;
+    removeMember(room, p);
+    if (rooms.get(room.code) === room) broadcast(room);
+  });
 }
 
 function stopRoom(room) { for (const mode of Object.values(MODES)) mode.stop(room); }
@@ -290,14 +325,18 @@ export const server = http.createServer(async (req, res) => {
     const { room, member } = found;
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     member.clients.add(res);
+    clearOffline(member);
     room.lastActive = Date.now();
+    checkOverdueHost(room);
     broadcast(room);
     if (room.started && MODES[room.mode].wake) MODES[room.mode].wake(room);
     const ping = setInterval(() => res.write(': ping\n\n'), 25000);
     req.on('close', () => {
       clearInterval(ping);
       member.clients.delete(res);
-      if (rooms.get(room.code) === room) broadcast(room);
+      if (rooms.get(room.code) !== room) return;
+      if (!member.clients.size && members(room).includes(member)) wentOffline(room, member);
+      broadcast(room);
     });
     return;
   }
@@ -331,7 +370,10 @@ export const server = http.createServer(async (req, res) => {
   }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
-  const file = path.join(PUBLIC, url.pathname === '/' ? 'index.html' : path.normalize(decodeURIComponent(url.pathname)));
+  let rel;
+  try { rel = url.pathname === '/' ? 'index.html' : path.normalize(decodeURIComponent(url.pathname)); }
+  catch { res.writeHead(400); return res.end('Bad request'); } // a malformed %-escape, like /%ZZ
+  const file = path.join(PUBLIC, rel);
   if (!file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }

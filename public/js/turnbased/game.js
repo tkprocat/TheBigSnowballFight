@@ -13,7 +13,7 @@ import {
 } from '../common/scene.js';
 import { addPlayer, removePlayer, animateAvatar, updateTags, followed } from '../common/players.js';
 import { THROW_DURATION, THROW_RELEASE_LEFT } from '../common/avatarAnimation.js';
-import { showOver, hideOver } from '../common/over.js';
+import { showOver, hideOver, overWinner } from '../common/over.js';
 import { T, resetT, curPlayer, currentWind, canControl, canMove, hiddenFromNext } from './state.js';
 import { renderHUD, refreshControls, updateReadout } from './hud.js';
 import { initInput } from './input.js';
@@ -195,7 +195,7 @@ function syncFromView(v) {
   const ci = S.players.findIndex((p) => p.id === v.cur);
   if (!T.busy) T.cur = ci < 0 ? 0 : ci; // keep the thrower highlighted until their snowball lands
   if (!v.over && S.over) hideOver();
-  if (v.over && !S.over && !T.busy) { const w = S.byId.get(v.over.winner); if (w) { showOver(w, v.over.reason); renderHUD(); } }
+  if (v.over && !S.over && !T.busy) { const w = overWinner(v.over); if (w) { showOver(w, v.over.reason); renderHUD(); } }
   const key = v.round + ':' + v.turn + ':' + v.cur;
   if (!T.busy && !v.over && key !== T.turnKey) { T.turnKey = key; onTurnStart(); }
   if (!T.busy && v.phase === 'aim' && T.phase === 'move') { T.phase = 'aim'; const cp = curPlayer(); if (cp && cp.local) T.aimYaw = startYaw(cp); }

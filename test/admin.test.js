@@ -31,7 +31,7 @@ function playTimedRound() {
   room.endsAt = Date.now() - 1;
   room.cur = room.players.indexOf(a); room.busyUntil = 0; room.phase = 'aim';
   assert.throws(() => act('throw', host.code, host.token, { yaw: Math.PI, pitch: 0.5, power: 0.1 }), /Time/);
-  assert.deepStrictEqual(room.over, { winner: b.id, reason: 'time' });
+  assert.deepStrictEqual(room.over, { winner: b.id, name: b.name, reason: 'time' });
   stop(room);
   return { host, friend, room };
 }

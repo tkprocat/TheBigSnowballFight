@@ -57,7 +57,7 @@ The statistics are anonymous: no names, lobby codes, tokens or IP addresses, onl
 
 ## Playing
 
-Press **Create a lobby** and send friends the 4-letter code or the invite link (`?room=CODE`). The host picks the mode, can add computer players (one at a time or four at once) and pick how good they are (Easy, Normal or Hard), and starts the game. Everyone sees a note when someone joins or leaves, and who hosts if the host leaves. On a phone, Copy invite link opens the share sheet. Friends can join a game that's already going. Playing alone? Create a lobby and add computer players.
+Press **Create a lobby** and send friends the 4-letter code or the invite link (`?room=CODE`). The host picks the mode, can add computer players (one at a time or four at once) and pick how good they are (Easy, Normal or Hard), and starts the game. Everyone sees a note when someone joins or leaves, and who hosts if the host leaves. If the host closes their page, hosting passes to someone still there after 20 seconds, and anyone gone for 2 minutes loses their seat (opening the page again before then keeps everything). On a phone, Copy invite link opens the share sheet. Friends can join a game that's already going. Playing alone? Create a lobby and add computer players.
 
 Anyone in the lobby can press **Watch instead** to give up their seat and spectate (Tab, or tap or click a name in the score list, to follow someone). The host stays host while watching, so for testing you can watch bots play each other. Someone joining a full room (16 seated players) becomes a spectator.
 

@@ -29,7 +29,7 @@ export function resolveClock(room) {
   if (!room.endsAt || room.suddenDeath || Date.now() < room.endsAt) return false;
   const result = checkWinner(room.players, room.win, room.endsAt, Date.now());
   if (result && result.winner) {
-    room.over = { winner: result.winner.id, reason: 'time' };
+    room.over = { winner: result.winner.id, name: result.winner.name, reason: 'time' };
     roundEnded(room);
     clearTimers(room); clearTimeout(room.endTimer); room.turnEnds = null;
     broadcast(room);
@@ -93,7 +93,7 @@ function doThrow(room, p, yaw, pitch, power) {
     ? (room.suddenDeath ? checkWinner(room.players, room.win, room.endsAt, Infinity) : null)
     : checkWinner(room.players, room.win, room.endsAt, Date.now());
   if (result && result.winner) {
-    room.over = { winner: result.winner.id, reason: result.reason };
+    room.over = { winner: result.winner.id, name: result.winner.name, reason: result.reason };
     roundEnded(room);
     clearTimeout(room.endTimer);
     clearTimers(room); room.turnEnds = null;

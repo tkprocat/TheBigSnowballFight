@@ -4,7 +4,7 @@ import assert from 'node:assert';
 const { actions, rooms, findMember } = await import('../server.js');
 const rtMode = await import('../modes/realtime/index.js');
 const { clock, tick, stopTick } = rtMode;
-const { CARRY_MAX, THROW_COOLDOWN_MS, THROW_POWER, TICK_MS } = await import('../public/shared/realtimeRules.js');
+const { CARRY_MAX, THROW_COOLDOWN_MS, THROW_POWER, TICK_MS, RUN_SPEED } = await import('../public/shared/realtimeRules.js');
 const { WIN_SCORE } = await import('../public/shared/physics.js');
 
 let T = 1e6;
@@ -149,7 +149,7 @@ test('reaching the winning score ends the round; again resets it', () => {
   const { room, code, tok, a } = g;
   a.score = WIN_SCORE - 1;
   assert.ok(findHit(g) != null);
-  assert.deepStrictEqual(room.over, { winner: a.id, reason: 'points' });
+  assert.deepStrictEqual(room.over, { winner: a.id, name: a.name, reason: 'points' });
   assert.throws(() => act('throw', code, tok[0], { yaw: 0, pitch: 0.4 }), /over/);
   act('again', code, tok[0]);
   assert.strictEqual(room.over, null);
@@ -194,6 +194,31 @@ test('bots pick up, throw and play a game to the end; they pause while nobody wa
   assert.ok(w.score >= WIN_SCORE);
   for (const p of room.players) assert.ok(p.ammo >= 0 && p.ammo <= CARRY_MAX);
   room.spectators[0].clients.clear();
+});
+
+test('sending position reports faster does not buy speed', () => {
+  const { room, code, tok, a } = game();
+  a.lastIn = T - 50;
+  // claim 1.6x running speed in a report every 50 ms for 2 s; the server keeps only what full speed allows
+  const start = T;
+  for (let i = 0; i < 40; i++) {
+    act('input', code, tok[0], { x: a.x + RUN_SPEED * 1.6 * 0.05, z: 0, yaw: 0, pitch: 0.4 });
+    T += 50;
+  }
+  const secs = (T - start) / 1000;
+  assert.ok(a.x <= RUN_SPEED * 1.15 * secs + 0.5 + 1e-6, `moved ${a.x.toFixed(2)} m in ${secs} s`);
+  // honest running with uneven report timing (30 ms, 70 ms, ...) is never refused
+  a.x = 0; a.lastIn = T - 50;
+  const fix = a.fix;
+  let x = 0;
+  for (let i = 0; i < 40; i++) {
+    const dt = i % 2 ? 70 : 30;
+    T += dt; x += RUN_SPEED * (i % 2 ? 0.03 : 0.07); // the move arrives out of step with the time
+    act('input', code, tok[0], { x, z: 0, yaw: 0, pitch: 0.4 });
+  }
+  assert.strictEqual(a.fix, fix, 'no snap-backs');
+  assert.ok(Math.abs(a.x - x) < 1e-3);
+  stopTick(room);
 });
 
 test('sprinting allows a faster step, but no throwing until you stop', () => {
@@ -340,7 +365,7 @@ test('win conditions in realtime: first to 5, and a timed round with sudden deat
   g.room.win = { type: 'points', points: 5 };
   g.a.score = 4;
   assert.ok(findHit(g) != null);
-  assert.deepStrictEqual(g.room.over, { winner: g.a.id, reason: 'points' });
+  assert.deepStrictEqual(g.room.over, { winner: g.a.id, name: g.a.name, reason: 'points' });
   stopTick(g.room);
   // a timed round: nothing at 9 points before the clock runs out; a tie when it does is sudden death
   const t = game();
@@ -355,7 +380,7 @@ test('win conditions in realtime: first to 5, and a timed round with sudden deat
   assert.strictEqual(t.room.suddenDeath, true, 'a shared lead when time runs out is sudden death');
   t.a.score = 10;
   run(t.room, TICK_MS);
-  assert.deepStrictEqual(t.room.over, { winner: t.a.id, reason: 'time' }, 'the first lone leader wins');
+  assert.deepStrictEqual(t.room.over, { winner: t.a.id, name: t.a.name, reason: 'time' }, 'the first lone leader wins');
   stopTick(t.room);
   // the rule itself
   assert.strictEqual(checkWinner([{ score: 3 }, { score: 9 }], { type: 'time', minutes: 3 }, 100, 50), null, 'clock still running');
