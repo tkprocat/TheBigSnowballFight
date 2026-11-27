@@ -187,8 +187,15 @@ test('over HTTP: off without ADMIN_TOKEN, 401 with a wrong token, data with the 
     assert.strictEqual((await fetch(base + '/api/admin', { method: 'POST', headers: { Authorization: 'Bearer let-me-in' } })).status, 405);
     for (let i = 0; i < 10; i++) await fetch(base + '/api/admin', { headers: { Authorization: 'Bearer wrong' } });
     assert.strictEqual((await fetch(base + '/api/admin', { headers: { Authorization: 'Bearer let-me-in' } })).status, 429, 'too many wrong tokens');
+    // behind a proxy (TRUST_PROXY): counted per visitor, from the last X-Forwarded-For entry
+    process.env.TRUST_PROXY = '1';
+    const from = (ip, token) => fetch(base + '/api/admin', { headers: { Authorization: 'Bearer ' + token, 'X-Forwarded-For': ip } });
+    for (let i = 0; i < 10; i++) await from('203.0.113.7', 'wrong');
+    assert.strictEqual((await from('203.0.113.7', 'let-me-in')).status, 429, 'that visitor is refused');
+    assert.strictEqual((await from('198.51.100.2', 'let-me-in')).status, 200, 'another visitor behind the same proxy is not');
+    assert.strictEqual((await from('198.51.100.2, 203.0.113.7', 'let-me-in')).status, 429, 'a made-up earlier entry does not help');
   } finally {
-    delete process.env.ADMIN_TOKEN;
+    delete process.env.ADMIN_TOKEN; delete process.env.TRUST_PROXY;
     server.closeAllConnections();
     await new Promise((r) => server.close(r));
   }

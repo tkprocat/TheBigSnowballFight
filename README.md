@@ -51,7 +51,7 @@ Set `ADMIN_TOKEN` to a long random string (for example `openssl rand -hex 24`) a
 - **Live:** every open room: its code, mode, lobby/playing/over, how many people are seated and connected, bots, spectators, round, win setting, top score, how long the round and the room have been going, and how long it's been idle.
 - **Statistics:** lobbies created, games started (and rematches), finished and abandoned, how often a bot wins, games started per day for the last 30 days, average game length and players per mode, how many people play per game, and the latest 50 games.
 
-Without `ADMIN_TOKEN`, `/admin` is a 404. The data comes from `GET /api/admin` with `Authorization: Bearer <token>`; after 10 wrong tokens in 10 minutes an address is refused for a while.
+Without `ADMIN_TOKEN`, `/admin` is a 404. The data comes from `GET /api/admin` with `Authorization: Bearer <token>`; after 10 wrong tokens in 10 minutes an address is refused for a while. Behind a reverse proxy (nginx, Caddy, Traefik…), set `TRUST_PROXY=1` so that count is kept per visitor, from the address the proxy adds to `X-Forwarded-For`, rather than for the proxy as a whole (where anyone could lock you out). Leave it unset when visitors reach the server directly.
 
 The statistics are anonymous: no names, lobby codes, tokens or IP addresses, only counts and times. With `STATS_DIR` set, each event is one JSON line appended to `STATS_DIR/stats.jsonl` and read back at startup, so totals survive restarts. The Docker image sets `STATS_DIR=/data`; mount a volume there (as above) or the file goes away with the container. Without `STATS_DIR` (plain `npm start`), statistics are kept in memory only. To start counting again, delete the file.
 

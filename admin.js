@@ -58,6 +58,17 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+// Who is asking, for counting wrong tokens. Behind a reverse proxy every request comes from the proxy, so one
+// visitor's wrong tokens would lock everyone out; with TRUST_PROXY set, the address the proxy put last in
+// X-Forwarded-For is used instead (only the last one: anything before it the visitor could have sent). Leave it
+// unset when nothing sits in front of the server, or anyone could pick their own address.
+export function clientAddr(req) {
+  const peer = req.socket.remoteAddress || '?';
+  if (!process.env.TRUST_PROXY) return peer;
+  const hops = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return hops.at(-1) || peer;
+}
+
 export function handleAdmin(req, res, url) {
   if (!process.env.ADMIN_TOKEN) { res.writeHead(404); return res.end('Not found'); }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
@@ -74,7 +85,7 @@ export function handleAdmin(req, res, url) {
   }
   if (url.pathname !== '/api/admin') return json(res, 404, { ok: false, error: 'Not found' });
 
-  const addr = req.socket.remoteAddress || '?';
+  const addr = clientAddr(req);
   const now = Date.now();
   const f = fails.get(addr);
   if (f && now - f.since > FAIL_WINDOW) fails.delete(addr);
